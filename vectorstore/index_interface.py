@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 
+from vectorstore.stats import IndexStatsTypedDict
+
 from .vector import (
     Vector,
     VectorMetadataTypedDict,
@@ -26,7 +28,7 @@ class IndexInterface(ABC):
 
     @abstractmethod
     def upsert_from_dataframe(
-        self, df, namespace: Optional[str] = None, batch_size: int = 500, show_progress: bool = True
+        self, df, namespace: Optional[str] = None, batch_size: int = 500
     ):
         """Upserts a dataframe into the index.
 
@@ -262,7 +264,7 @@ class IndexInterface(ABC):
     @abstractmethod
     def describe_index_stats(
         self, filter: Optional[FilterTypedDict] = None, **kwargs
-    ) -> Any:
+    ) -> IndexStatsTypedDict:
         """
         The DescribeIndexStats operation returns statistics about the index's contents.
         For example: The vector count per namespace and the number of dimensions.
@@ -284,7 +286,7 @@ class IndexInterface(ABC):
 
 
     @abstractmethod
-    def list(self, **kwargs) -> List[str]:
+    def list(self, prefix: Optional[str], namespace: Optional[str]) -> List[str]:
         """
         The list operation accepts all of the same arguments as list_paginated, and returns a generator that yields
         a list of the matching vector ids in each page of results. It automatically handles pagination tokens on your
@@ -305,4 +307,8 @@ class IndexInterface(ABC):
                 in the response if additional results are available. [optional]
             namespace (Optional[str]): The namespace to fetch vectors from. If not specified, the default namespace is used. [optional]
         """
+        pass
+
+    @abstractmethod
+    def fetch(self, ids: List[str], namespace: Optional[str] = None, **kwargs) -> Dict[str, Vector]:
         pass

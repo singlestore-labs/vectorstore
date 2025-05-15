@@ -221,7 +221,7 @@ class VectorDB(ABC):
             use_vector_index=use_vector_index,
             vector_index_options=vector_index_options
         )
-        
+
 
     def delete_index(self, name: str) -> None:
         """Delete an index from the database."""
@@ -278,7 +278,7 @@ class VectorDB(ABC):
                              {INDEX_DELETION_PROTECT_FIELD},
                              {INDEX_USE_VECTOR_INDEX_FIELD},
                              {INDEX_VECTOR_INDEX_OPTIONS_FIELD},
-                             {INDEX_TAGS_FIELD} FROM {INDEXES_TABLE_NAME} 
+                             {INDEX_TAGS_FIELD} FROM {INDEXES_TABLE_NAME}
                              WHERE {INDEX_NAME_FIELD}='{name}'""")
                 result = curr.fetchone()
                 if result is None:
@@ -323,51 +323,51 @@ class VectorDB(ABC):
     ) -> IndexModel:
         """
         Configure an existing index with updated parameters.
-        
+
         Args:
             name: Name of the index to configure
             deletion_protection: Whether to enable deletion protection
             tags: Custom metadata tags for the index
             use_vector_index: Whether to use a vector index
             vector_index_options: Options for the vector index
-            
+
         Returns:
             Updated IndexModel
         """
         # Validate index exists and get current settings
         index = self.describe_index(name)
-        
+
         # Build update parameters
         update_params = []
-        
+
         # Handle deletion protection
         if deletion_protection is not None:
             if not isinstance(deletion_protection, DeletionProtection):
                 raise ValueError(f"Invalid deletion_protection: {deletion_protection}. Must be one of {list(DeletionProtection)}")
             is_protected = deletion_protection == DeletionProtection.ENABLED
             update_params.append(f"{INDEX_DELETION_PROTECT_FIELD}={is_protected}")
-        
+
         # Handle tags
         if tags is not None:
             tags_json = json.dumps(tags)
             update_params.append(f"{INDEX_TAGS_FIELD}='{tags_json}'")
-        
+
         # Prepare vector index options
         if vector_index_options is None:
             vector_index_options = {}
-        
+
         # Handle vector index settings
         if use_vector_index is not None:
             update_params.append(f"{INDEX_USE_VECTOR_INDEX_FIELD}={use_vector_index}")
             # Add required metric type to options
             distance_strategy = self._get_distance_strategy(index.metric)
             vector_index_options[METRIC_TYPE] = distance_strategy.value
-        
+
         # Add vector index options to update parameters if provided
         if vector_index_options:
             options_json = json.dumps(vector_index_options)
             update_params.append(f"{INDEX_VECTOR_INDEX_OPTIONS_FIELD}='{options_json}'")
-        
+
         # Execute updates if there are parameters to update
         if update_params:
             connection = self._get_connection()
@@ -376,30 +376,30 @@ class VectorDB(ABC):
                     # Update index metadata in the indexes table
                     update_sql = f"UPDATE {INDEXES_TABLE_NAME} SET {', '.join(update_params)} WHERE {INDEX_NAME_FIELD}='{name}'"
                     curr.execute(update_sql)
-                    
+
                     # Handle vector index changes if requested
                     if use_vector_index is not None:
                         table_name = _get_index_table_name(name)
-                        
+
                         # Drop existing index if needed
                         if index.use_vector_index or not use_vector_index:
                             curr.execute(f"DROP INDEX {VECTOR_INDEX} ON {table_name}")
-                        
+
                         # Create new vector index if requested
                         if use_vector_index:
                             # Determine which vector field to index based on metric
                             vector_field = VECTOR_NORMALIZED_FIELD if index.metric == Metric.COSINE else VECTOR_FIELD
-                            
+
                             # Create the vector index
                             index_options = f"INDEX_OPTIONS '{json.dumps(vector_index_options)}'"
                             create_index_sql = f"ALTER TABLE {table_name} ADD VECTOR INDEX {VECTOR_INDEX} ({vector_field}) {index_options}"
                             curr.execute(create_index_sql)
-                            
+
                             # Optimize the table to apply changes
                             curr.execute(f"OPTIMIZE TABLE {table_name} FLUSH")
             finally:
                 self._close_connection_if_needed(connection)
-                
+
         # Return the updated index information
         return self.describe_index(name)
 
