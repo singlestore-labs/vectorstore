@@ -8,6 +8,7 @@ from .metric import Metric
 from .index_interface import IndexInterface
 from .vectordb import VectorDB
 from .stats import IndexStatsTypedDict, NamespaceStatsTypedDict
+from .match import MatchTypedDict
 from .vector import Vector, VectorTuple, VectorTupleWithMetadata, VectorMetadataTypedDict, VectorDictMetadataValue
 from .filter import SimpleFilter, AndFilter, FilterTypedDict, ExactMatchFilter, EqFilter, NeFilter, GtFilter, GteFilter, LtFilter, LteFilter, InFilter, NinFilter
 
@@ -45,5 +46,6 @@ __all__ = [
     "NinFilter",
     "IndexStatsTypedDict",
     "NamespaceStatsTypedDict",
+    "MatchTypedDict",
     "__version__",
 ]

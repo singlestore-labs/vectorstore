@@ -4,11 +4,13 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 from singlestoredb.connection import Connection
 from sqlalchemy.pool import Pool
 
+from vectorstore.distance_strategy import DistanceStrategy
+from vectorstore.match import MatchTypedDict
 from vectorstore.metric import Metric
 from vectorstore.stats import IndexStatsTypedDict, NamespaceStatsTypedDict
 
 from .index_model import IndexModel
-from .filter import FilterTypedDict
+from .filter import FilterTypedDict, SimpleFilter
 from .index_interface import IndexInterface, VectorTypedDict
 from .vector import (
     Vector,
@@ -114,8 +116,31 @@ class _Index(IndexInterface):
         if ids:
             fields.append(f"{ID_FIELD} IN ({','.join(['%s'] * len(ids))})")
             params.extend(ids)
+
+        def _parse_filter_conditions(filter: SimpleFilter) -> Tuple[List[str], List[Any]]:
+            fields = []
+            params = []
+            return fields, params
+
         if filter:
-            pass
+            if not isinstance(filter, dict):
+                raise ValueError("Filter must be a dictionary")
+            if len(filter) == 1:
+                if "$and" in filter:
+                    and_conditions = filter["$and"]
+                    if not isinstance(and_conditions, list):
+                        raise ValueError("$and must be a list of conditions")
+                    for condition in and_conditions:
+                        filter_fields, filter_params = _parse_filter_conditions(condition)
+                        fields.extend(filter_fields)
+                        params.extend(filter_params)
+                else:
+                    filter_fields, filter_params = _parse_filter_conditions(filter)
+                    fields.extend(filter_fields)
+                    params.extend(filter_params)
+
+            elif len(filter) > 1:
+                raise ValueError("Filter cannot contain multiple conditions at the top level")
         return fields, params
 
     def upsert(
@@ -141,6 +166,7 @@ class _Index(IndexInterface):
             return 0
 
         conn = self._get_connection()
+        result = 0
         try:
             with conn.cursor() as curr:
                 # Determine fields to include in the query
@@ -195,14 +221,14 @@ class _Index(IndexInterface):
                         f"REPLACE INTO {table_name} ({','.join(fields)}) VALUES ({placeholders})",
                         values
                     )
-
+                    result += curr.rowcount
                 # Optimize table if using vector index
                 if self.index.use_vector_index:
                     curr.execute(f"OPTIMIZE TABLE {table_name} FLUSH")
         finally:
             self._close_connection_if_needed(conn)
 
-        return len(vectors)
+        return result
 
     def upsert_from_dataframe(
         self, df: Any, namespace: Optional[str] = None, batch_size: int = 500
@@ -236,8 +262,55 @@ class _Index(IndexInterface):
         filter: Optional[FilterTypedDict] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        # Implementation to be added
-        return {}
+        """
+        Delete vectors from the index based on provided criteria.
+
+        Args:
+            ids: List of vector IDs to delete
+            delete_all: If True, delete all vectors (use with caution)
+            namespace: Namespace to delete from
+            filter: Filter condition for deletion
+            **kwargs: Additional arguments
+
+        Returns:
+            Empty dict for now
+
+        Raises:
+            ValueError: If the deletion criteria are invalid
+        """
+        # Validate inputs
+        has_ids = ids is not None and len(ids) > 0
+        has_filter = filter is not None and len(filter) > 0
+
+        # Check for conflicting parameters
+        if delete_all is True and (has_ids or has_filter):
+            raise ValueError("Cannot delete all vectors and specify ids or filter at the same time")
+
+        if has_ids and has_filter:
+            raise ValueError("Cannot specify both ids and filter for deletion")
+
+        if not delete_all and not has_ids and not has_filter:
+            raise ValueError("Must specify ids, delete_all, or filter to delete vectors")
+
+        where_fields, params = self._get_where_clauses(
+            ids=ids, namespace=namespace, filter=filter
+        )
+
+        where_clause = ""
+        if len(where_fields) > 0:
+            where_clause = "WHERE " + " AND ".join(where_fields)
+
+        # Execute the delete
+        table_name = _get_index_table_name(self.index.name)
+        sql = f"DELETE FROM {table_name} {where_clause}"
+
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as curr:
+                curr.execute(sql, params)
+                return {}
+        finally:
+            self._close_connection_if_needed(conn)
 
     def fetch(self, ids: List[str], namespace: Optional[str] = None, **kwargs) -> Dict[str, Vector]:
         where_fields, params = self._get_where_clauses(namespace=namespace, ids=ids)
@@ -262,7 +335,7 @@ class _Index(IndexInterface):
 
     def query(
         self,
-        *args,
+        *,
         top_k: int,
         vector: Optional[List[float]] = None,
         id: Optional[str] = None,
@@ -271,21 +344,55 @@ class _Index(IndexInterface):
         include_values: Optional[bool] = None,
         include_metadata: Optional[bool] = None,
         **kwargs,
-    ) -> Any:
-        # Implementation to be added
-        return None
-
-    def query_namespaces(
-        self,
-        vector: List[float],
-        namespaces: List[str],
-        top_k: Optional[int] = None,
-        filter: Optional[FilterTypedDict] = None,
-        include_values: Optional[bool] = None,
-        include_metadata: Optional[bool] = None,
-        **kwargs,
-    ) -> Any:
-        # Implementation to be added
+    ) -> List[MatchTypedDict]:
+        if not vector and not id:
+            raise ValueError("Must provide either a vector or an id for querying")
+        if vector and id:
+            raise ValueError("Cannot provide both a vector and an id for querying")
+        where_fields, params = self._get_where_clauses(namespace=namespace, filter=filter)
+        if id:
+            vectors = self.fetch([id])
+            if len(vectors) == 0:
+                raise ValueError(f"Vector with id {id} not found.")
+            vector = vectors[id].vector
+        distance_function = "-" + DistanceStrategy.DOT_PRODUCT.value
+        if self.index.metric == Metric.EUCLIDEAN:
+            distance_function = DistanceStrategy.EUCLIDEAN_DISTANCE.value
+        value_field = VECTOR_FIELD
+        if self.index.metric == Metric.COSINE:
+            value_field = VECTOR_NORMALIZED_FIELD
+            vector_length = sum(x ** 2 for x in vector) ** 0.5
+            if vector_length > 0:
+                vector = [x / vector_length for x in vector]
+        formatted_vector = self._format_vector_values(vector)
+        where_clause = " AND ".join(where_fields)
+        where_clause = f"WHERE {where_clause}" if where_clause else ""
+        table_name = _get_index_table_name(self.index.name)
+        sql = f"""
+            SELECT {ID_FIELD}, {VECTOR_FIELD}, {METADATA_FIELD},
+                   {distance_function}({value_field}, '{formatted_vector}') AS __score
+            FROM {table_name} {where_clause}
+            ORDER BY __score ASC
+            LIMIT %s
+        """
+        params.append(top_k)
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as curr:
+                curr.execute(sql, params)
+                rows = curr.fetchall()
+                matches = []
+                for row in rows:
+                    match: MatchTypedDict = {
+                        "id": row[0],
+                        "values": row[1].tolist() if include_values else None,
+                        "metadata": row[2] if include_metadata else None,
+                        "score": -row[3] if self.index.metric != Metric.EUCLIDEAN else row[3],
+                    }
+                    matches.append(match)
+                return matches
+        finally:
+            self._close_connection_if_needed(conn)
         return None
 
     def update(

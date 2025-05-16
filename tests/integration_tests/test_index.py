@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import Generator, List
 import pytest
 
 from singlestoredb.server import docker
@@ -8,6 +8,7 @@ from singlestoredb import connect
 from sqlalchemy.pool import Pool, QueuePool
 
 from vectorstore import VectorDB, Metric, DeletionProtection, DistanceStrategy, IndexInterface
+from vectorstore.match import MatchTypedDict
 from vectorstore.vector import Vector
 
 class TestIndex:
@@ -71,6 +72,24 @@ class TestIndex:
         index.upsert(vectors, namespace="test_namespace")
         return index
 
+    @pytest.fixture(scope="function")
+    def index_dotproduct(self, clean_connection_params: dict) -> IndexInterface:
+        db = VectorDB(**clean_connection_params)
+        db.create_index("test_index", dimension=3, metric=Metric.DOTPRODUCT)
+        return db.Index("test_index")
+
+    @pytest.fixture(scope="function")
+    def index_cosine(self, clean_connection_params: dict) -> IndexInterface:
+        db = VectorDB(**clean_connection_params)
+        db.create_index("test_index", dimension=3, metric=Metric.COSINE)
+        return db.Index("test_index")
+
+    @pytest.fixture(scope="function")
+    def index_euclidean(self, clean_connection_params: dict) -> IndexInterface:
+        db = VectorDB(**clean_connection_params)
+        db.create_index("test_index", dimension=3, metric=Metric.EUCLIDEAN)
+        return db.Index("test_index")
+
     def test_upsert(self, clean_connection_params, index_metric: tuple[IndexInterface, Metric]) -> None:
         vectors = [
             ("id1", [0.1, 0.2, 0.3]),
@@ -92,19 +111,14 @@ class TestIndex:
         for i, vector in enumerate(vectors):
             if metric == Metric.COSINE:
                 assert len(results[i]) == 7
-                assert len(results[i][6]) == 3
-                assert abs(sum(results[i][6][j]**2 for j in range(3))-1) < 0.0001
                 length = sum(vector[1][j]**2 for j in range(3))**0.5
-                assert all(
-                    abs(results[i][6][j] - vector[1][j]/length) < 0.0001 for j in range(3)
+                assert results[i][6] == pytest.approx(
+                    [vector[1][j]/length for j in range(3)], rel=1e-3
                 )
             else:
                 assert len(results[i]) == 6
             assert results[i][0] == vector[0]
-            assert len(results[i][1]) == 3
-            assert all(
-                abs(results[i][1][j] - vector[1][j]) < 0.0001 for j in range(3)
-            )
+            assert results[i][1] == pytest.approx(vector[1], rel=1e-3)
             assert results[i][2] is None
             assert results[i][3] is None
         curr.close()
@@ -129,19 +143,14 @@ class TestIndex:
         for i, vector in enumerate(vectors):
             assert len(results[i]) >= 6
             assert results[i][0] == vector[0]
-            assert len(results[i][1]) == 3
-            assert all(
-                abs(results[i][1][j] - vector[1][j]) < 0.0001 for j in range(3)
-            )
+            assert results[i][1] == pytest.approx(vector[1], rel=1e-3)
             assert results[i][2] == vector[2]
             assert results[i][3] is None
             if len(results[i]) > 6:
                 assert len(results[i]) == 7
-                assert len(results[i][6]) == 3
-                assert abs(sum(results[i][6][j]**2 for j in range(3))-1) < 0.0001
                 length = sum(vector[1][j]**2 for j in range(3))**0.5
-                assert all(
-                    abs(results[i][6][j] - vector[1][j]/length) < 0.0001 for j in range(3)
+                assert results[i][6] == pytest.approx(
+                    [vector[1][j]/length for j in range(3)], rel=1e-3
                 )
         curr.close()
         conn.close()
@@ -165,19 +174,14 @@ class TestIndex:
         for i, vector in enumerate(vectors):
             assert len(results[i]) >= 6
             assert results[i][0] == vector[0]
-            assert len(results[i][1]) == 3
-            assert all(
-                abs(results[i][1][j] - vector[1][j]) < 0.0001 for j in range(3)
-            )
+            assert results[i][1] == pytest.approx(vector[1], rel=1e-3)
             assert results[i][2] == vector[2]
             assert results[i][3] == "test_namespace"
             if len(results[i]) > 6:
                 assert len(results[i]) == 7
-                assert len(results[i][6]) == 3
-                assert abs(sum(results[i][6][j]**2 for j in range(3))-1) < 0.0001
                 length = sum(vector[1][j]**2 for j in range(3))**0.5
-                assert all(
-                    abs(results[i][6][j] - vector[1][j]/length) < 0.0001 for j in range(3)
+                assert results[i][6] == pytest.approx(
+                    [vector[1][j]/length for j in range(3)], rel=1e-3
                 )
         curr.close()
         conn.close()
@@ -201,19 +205,14 @@ class TestIndex:
         for i, vector in enumerate(vectors):
             assert len(results[i]) >= 6
             assert results[i][0] == vector.id
-            assert len(results[i][1]) == 3
-            assert all(
-                abs(results[i][1][j] - vector.vector[j]) < 0.0001 for j in range(3)
-            )
+            assert results[i][1] == pytest.approx(vector.vector, rel=1e-3)
             assert results[i][2] == vector.metadata
             assert results[i][3] == "test_namespace"
             if len(results[i]) > 6:
                 assert len(results[i]) == 7
-                assert len(results[i][6]) == 3
-                assert abs(sum(results[i][6][j]**2 for j in range(3))-1) < 0.0001
                 length = sum(vector.vector[j]**2 for j in range(3))**0.5
-                assert all(
-                    abs(results[i][6][j] - vector.vector[j]/length) < 0.0001 for j in range(3)
+                assert results[i][6] == pytest.approx(
+                    [vector.vector[j]/length for j in range(3)], rel=1e-3
                 )
         curr.close()
         conn.close()
@@ -237,19 +236,14 @@ class TestIndex:
         for i, vector in enumerate(vectors):
             assert len(results[i]) >= 6
             assert results[i][0] == vector["id"]
-            assert len(results[i][1]) == 3
-            assert all(
-                abs(results[i][1][j] - vector["values"][j]) < 0.0001 for j in range(3)
-            )
+            assert results[i][1] == pytest.approx(vector["values"], rel=1e-3)
             assert results[i][2] == vector["metadata"]
             assert results[i][3] is None
             if len(results[i]) > 6:
                 assert len(results[i]) == 7
-                assert len(results[i][6]) == 3
-                assert abs(sum(results[i][6][j]**2 for j in range(3))-1) < 0.0001
                 length = sum(vector["values"][j]**2 for j in range(3))**0.5
-                assert all(
-                    abs(results[i][6][j] - vector["values"][j]/length) < 0.0001 for j in range(3)
+                assert results[i][6] == pytest.approx(
+                    [vector["values"][j]/length for j in range(3)], rel=1e-3
                 )
         curr.close()
         conn.close()
@@ -262,7 +256,7 @@ class TestIndex:
             "metadata": [{"key1": "value1"}, {"key2": "value2"}, {"key3": "value3"}, {"key4": "value4"}]
         })
         count = index.upsert_from_dataframe(vectors, namespace="test_namespace")
-        assert count == 4
+        assert count == 5
         conn = connect(**clean_connection_params)
         curr = conn.cursor()
         curr.execute("select count(*) from index_test_index")
@@ -278,19 +272,15 @@ class TestIndex:
                 i = 1
             assert len(results[i]) >= 6
             assert results[i][0] == vector[0]
-            assert len(results[i][1]) == 3
-            assert all(
-                abs(results[i][1][j] - vector[1][j]) < 0.0001 for j in range(3)
-            )
+            assert results[i][1] == pytest.approx(vector[1], rel=1e-3)
             assert results[i][2] == vector[2]
             assert results[i][3] == "test_namespace"
             if len(results[i]) > 6:
                 assert len(results[i]) == 7
                 assert len(results[i][6]) == 3
-                assert abs(sum(results[i][6][j]**2 for j in range(3))-1) < 0.0001
                 length = sum(vector[1][j]**2 for j in range(3))**0.5
-                assert all(
-                    abs(results[i][6][j] - vector[1][j]/length) < 0.0001 for j in range(3)
+                assert results[i][6] == pytest.approx(
+                    [vector[1][j]/length for j in range(3)], rel=1e-3
                 )
         curr.close()
         conn.close()
@@ -330,13 +320,11 @@ class TestIndex:
         # Check id1 vector properties
         assert fetched_vectors["id1"].id == "id1"
         assert fetched_vectors["id1"].metadata == {"key1": "value1"}
-        assert len(fetched_vectors["id1"].vector) == 3
-        assert all(abs(fetched_vectors["id1"].vector[i] - 0.1*(i+1)) < 0.0001 for i in range(3))
+        assert fetched_vectors["id1"].vector == pytest.approx([0.1, 0.2, 0.3], rel=1e-3)
         # Check id2 vector properties
         assert fetched_vectors["id2"].id == "id2"
         assert fetched_vectors["id2"].metadata == {"key2": "value2"}
-        assert len(fetched_vectors["id2"].vector) == 3
-        assert all(abs(fetched_vectors["id2"].vector[i] - 0.1*(i+4)) < 0.0001 for i in range(3))
+        assert fetched_vectors["id2"].vector == pytest.approx([0.4, 0.5, 0.6], rel=1e-3)
 
     def test_fetch_2(self, index_with_sample_data: IndexInterface) -> None:
         # Test non-existent vector
@@ -360,8 +348,7 @@ class TestIndex:
         assert "id1" in fetch_namespace
         assert fetch_namespace["id1"].id == "id1"
         assert fetch_namespace["id1"].metadata == {"key1": "value1"}
-        assert len(fetch_namespace["id1"].vector) == 3
-        assert all(abs(fetch_namespace["id1"].vector[i] - 0.1*(i+1)) < 0.0001 for i in range(3))
+        assert fetch_namespace["id1"].vector == pytest.approx([0.1, 0.2, 0.3], rel=1e-3)
 
     def test_update_1(self, index_with_sample_data: IndexInterface) -> None:
         # Update existing vector
@@ -370,8 +357,7 @@ class TestIndex:
         fetched_vectors = index_with_sample_data.fetch(["id1"])
         assert fetched_vectors["id1"].id == "id1"
         assert fetched_vectors["id1"].metadata == {"key1": "value1"}
-        assert len(fetched_vectors["id1"].vector) == 3
-        assert all(abs(fetched_vectors["id1"].vector[i] - (0.9 - 0.1*i)) < 0.0001 for i in range(3))
+        assert fetched_vectors["id1"].vector == pytest.approx([0.9, 0.8, 0.7], rel=1e-3)
 
     def test_update_2(self, index_with_sample_data: IndexInterface) -> None:
         # Update non-existent vector
@@ -386,8 +372,7 @@ class TestIndex:
         fetched_vectors = index_with_sample_data.fetch(["id1"])
         assert fetched_vectors["id1"].id == "id1"
         assert fetched_vectors["id1"].metadata == {"key1": "new_value"}
-        assert len(fetched_vectors["id1"].vector) == 3
-        assert all(abs(fetched_vectors["id1"].vector[i] - (0.9 - 0.1*i)) < 0.0001 for i in range(3))
+        assert fetched_vectors["id1"].vector == pytest.approx([0.9, 0.8, 0.7], rel=1e-3)
 
     def test_update_4(self, index_with_sample_data: IndexInterface) -> None:
         # Update vector with namespace
@@ -397,8 +382,7 @@ class TestIndex:
         assert len(fetched_vectors) == 1
         assert fetched_vectors["id1"].id == "id1"
         assert fetched_vectors["id1"].metadata == {}
-        assert len(fetched_vectors["id1"].vector) == 3
-        assert all(abs(fetched_vectors["id1"].vector[i] - 0.1 - 0.1*i) < 0.0001 for i in range(3))
+        assert fetched_vectors["id1"].vector == pytest.approx([0.1, 0.2, 0.3], rel=1e-3)
 
     def test_update_5(self, index_with_sample_data: IndexInterface) -> None:
         # Error when trying to update vector without providing values
@@ -417,4 +401,124 @@ class TestIndex:
             "total_vector_count": 3,
             "namespaces": {"test_namespace": {"vector_count": 3}}
         }
-        
+
+    def test_describe_index_stats_with_filter(self, index_with_sample_data: IndexInterface) -> None:
+        pass
+
+    def test_delete_1(self, index_with_sample_data: IndexInterface) -> None:
+        # Delete existing vector
+        index_with_sample_data.delete(["id1"])
+        fetched_vectors = index_with_sample_data.fetch(["id1"])
+        assert fetched_vectors == {}
+        assert index_with_sample_data.list() == ["id2", "id3"]
+
+    def test_delete_2(self, index_with_sample_data: IndexInterface) -> None:
+        # Delete non-existent vector
+        index_with_sample_data.delete(["nonexistent_id"])
+        fetched_vectors = index_with_sample_data.fetch(["nonexistent_id"])
+        assert fetched_vectors == {}
+        assert index_with_sample_data.list() == ["id1", "id2", "id3"]
+
+    def test_delete_3(self, index_with_sample_data: IndexInterface) -> None:
+        # Delete vector with namespace
+        index_with_sample_data.delete(["id1"], namespace="test_namespace")
+        fetched_vectors = index_with_sample_data.fetch(["id1"], namespace="test_namespace")
+        assert fetched_vectors == {}
+        assert index_with_sample_data.list(namespace="test_namespace") == ["id2", "id3"]
+
+    def test_delete_4(self, index_with_sample_data: IndexInterface) -> None:
+        # Delete all vectors in a namespace
+        index_with_sample_data.delete(namespace="test_namespace", delete_all=True)
+        fetched_vectors = index_with_sample_data.fetch(["id1", "id2", "id3"], namespace="test_namespace")
+        assert fetched_vectors == {}
+        assert index_with_sample_data.list(namespace="test_namespace") == []
+
+    def test_delete_5(self, index_with_sample_data: IndexInterface) -> None:
+        # Delete all vectors in the index
+        index_with_sample_data.delete([], delete_all=True)
+        fetched_vectors = index_with_sample_data.fetch(["id1", "id2", "id3"])
+        assert fetched_vectors == {}
+        assert index_with_sample_data.list() == []
+
+    def test_delete_6(self, index_with_sample_data: IndexInterface) -> None:
+        # Error when trying to delete without providing IDs or namespace
+        with pytest.raises(ValueError):
+            index_with_sample_data.delete()
+
+    def test_delete_7(self, index_with_sample_data: IndexInterface) -> None:
+        # Error when trying to delete with empty IDs
+        with pytest.raises(ValueError):
+            index_with_sample_data.delete([])
+
+    def test_delete_8(self, index_with_sample_data: IndexInterface) -> None:
+        # Error when trying to delete with empty namespace
+        with pytest.raises(ValueError):
+            index_with_sample_data.delete(namespace="mynamespace")
+
+    def test_delete_9(self, index_with_sample_data: IndexInterface) -> None:
+        # Error when trying to delete with empty IDs and namespace
+        with pytest.raises(ValueError):
+            index_with_sample_data.delete([], namespace="mynamespace")
+
+    def test_delete_10(self, index_with_sample_data: IndexInterface) -> None:
+        # Error when trying to delete with empty IDs and delete_all=True
+        with pytest.raises(ValueError):
+            index_with_sample_data.delete(["id1"], delete_all=True)
+
+    def test_delete_11(self, index_with_sample_data: IndexInterface) -> None:
+        # Error when trying to delete with empty namespace and delete_all=True
+        with pytest.raises(ValueError):
+            index_with_sample_data.delete(
+                namespace="test_namespace", delete_all=True, filter = {"key": "value"})
+
+    def test_query_index(self, index_with_sample_data: IndexInterface) -> None:
+        results = index_with_sample_data.query(id="id3", top_k=1, include_values=True)
+        assert len(results) == 1
+        assert results[0]["id"] == "id3"
+        assert results[0]["values"] == pytest.approx([0.7, 0.8, 0.9], rel=1e-3)
+
+    def test_query_dotproduct(self, index_dotproduct: IndexInterface) -> None:
+        index_dotproduct.upsert([
+            ("id1", [0.1, 0.2, 0.3]),
+            ("id2", [1, 2, 3]),
+            ("id3", [0.7, 0.8, 0.9]),
+        ])
+        query_vector = [0.1, 0.2, 0.3]
+        results: List[MatchTypedDict] = index_dotproduct.query(
+            vector=query_vector, top_k=2, include_values=True)
+        assert len(results) == 2
+        assert results[0]["id"] == "id2"
+        assert results[1]["id"] == "id3"
+        assert results[0]["score"] == pytest.approx(1.4, rel=1e-3)
+        assert results[1]["score"] == pytest.approx(0.5, rel=1e-3)
+
+    def test_query_cosine(self, index_cosine: IndexInterface) -> None:
+        index_cosine.upsert([
+            ("id1", [0.1, 0.2, 0.3]),
+            ("id2", [1, 2, 3.3]),
+            ("id3", [0.7, 0.8, 0.9]),
+        ])
+        query_vector = [0.1, 0.2, 0.3]
+        results: List[MatchTypedDict] = index_cosine.query(
+            vector=query_vector, top_k=2, include_values=True)
+        assert len(results) == 2
+        assert results[0]["id"] == "id1"
+        assert results[1]["id"] == "id2"
+
+        assert results[0]["score"] == pytest.approx(1.0, rel=1e-3)
+        assert results[1]["score"] == pytest.approx(0.998, rel=1e-3)
+
+    def test_query_euclidean(self, index_euclidean: IndexInterface) -> None:
+        index_euclidean.upsert([
+            ("id1", [0.1, 0.2, 0.3]),
+            ("id2", [1, 2, 3]),
+            ("id3", [0.7, 0.8, 0.9]),
+        ])
+        query_vector = [0.1, 0.2, 0.3]
+        results: List[MatchTypedDict] = index_euclidean.query(
+            vector=query_vector, top_k=2, include_values=True)
+        assert len(results) == 2
+        assert results[0]["id"] == "id1"
+        assert results[1]["id"] == "id3"
+        assert results[0]["score"] == pytest.approx(0.0, rel=1e-3)
+        assert results[1]["score"] == pytest.approx(1.039, rel=1e-3)

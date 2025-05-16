@@ -8,7 +8,7 @@ VectorTupleWithMetadata = tuple[str, List[float], VectorMetadataTypedDict]
 
 class VectorTypedDict(TypedDict, total=False):
     values: List[float]
-    metadata: dict
+    metadata: VectorMetadataTypedDict
     id: str
 
 class Vector(NamedTuple):
