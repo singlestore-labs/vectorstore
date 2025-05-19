@@ -1,3 +1,4 @@
+import math
 from typing import Generator, List
 import pytest
 
@@ -7,7 +8,7 @@ from singlestoredb import connect
 
 from sqlalchemy.pool import Pool, QueuePool
 
-from vectorstore import VectorDB, Metric, DeletionProtection, DistanceStrategy, IndexInterface
+from vectorstore import VectorDB, Metric, IndexInterface
 from vectorstore.match import MatchTypedDict
 from vectorstore.vector import Vector
 
@@ -89,6 +90,34 @@ class TestIndex:
         db = VectorDB(**clean_connection_params)
         db.create_index("test_index", dimension=3, metric=Metric.EUCLIDEAN)
         return db.Index("test_index")
+
+    @pytest.fixture(scope="function")
+    def cosine_index_with_vector_index(self, clean_connection_params) -> IndexInterface:
+        db = VectorDB(**clean_connection_params)
+        db.create_index("test_index", dimension=3, metric=Metric.COSINE, use_vector_index=True,
+                        vector_index_options=
+                            {"index_type":"IVF_PQFS", "nlist":1024, "nprobe":20}
+                        )
+        return db.Index("test_index")
+
+    @pytest.fixture(scope="function")
+    def dotproduct_index_with_vector_index(self, clean_connection_params) -> IndexInterface:
+        db = VectorDB(**clean_connection_params)
+        db.create_index("test_index", dimension=3, metric=Metric.DOTPRODUCT, use_vector_index=True,
+                        vector_index_options=
+                            {"index_type":"HNSW_FLAT", "M": 16}
+                        )
+        return db.Index("test_index")
+
+    @pytest.fixture(scope="function")
+    def euclidean_index_with_vector_index(self, clean_connection_params) -> IndexInterface:
+        db = VectorDB(**clean_connection_params)
+        db.create_index("test_index", dimension=3, metric=Metric.EUCLIDEAN, use_vector_index=True,
+                        vector_index_options=
+                            {"index_type":"HNSW_PQ", "nlist":120, "m":3}
+                        )
+        return db.Index("test_index")
+
 
     def test_upsert(self, clean_connection_params, index_metric: tuple[IndexInterface, Metric]) -> None:
         vectors = [
@@ -402,8 +431,48 @@ class TestIndex:
             "namespaces": {"test_namespace": {"vector_count": 3}}
         }
 
-    def test_describe_index_stats_with_filter(self, index_with_sample_data: IndexInterface) -> None:
-        pass
+    def test_describe_index_stats_with_filter_1(self, index_with_sample_data: IndexInterface) -> None:
+        stats = index_with_sample_data.describe_index_stats(
+            filter={"$or": [
+                {"key1": "value1"},
+                {"key2": {
+                    "$exists" : True
+                    }
+                }
+                ]})
+        assert stats == {
+            "dimension": 3,
+            "total_vector_count": 2,
+            "namespaces": {"test_namespace": {"vector_count": 2}}
+        }
+
+    def test_describe_index_stats_with_filter_2(self, index: IndexInterface) -> None:
+        index.upsert([
+            ("id1", [0.1, 0.2, 0.3], {"key1": "value1", "key2": 192, "key3": True, "key4": ["item1", "item2"]}),
+            ("id2", [0.4, 0.5, 0.6], {"key1": "value2", "key2": 193, "key3": False, "key4": ["item3", "item4"]}),
+            ("id3", [0.7, 0.8, 0.9], {"key1": "value3", "key2": 200.58, "key4": ["item2", "item3"]}),
+        ], namespace="test_namespace")
+        stats1 = index.describe_index_stats(
+            filter={"$and": [
+                {"key1": {"$in": ["value1", "value2"]}},
+                {"key4": {"$nin": ["item4", "item3"]}}
+            ]}
+        )
+        assert stats1 == {
+            "dimension": 3,
+            "total_vector_count": 1,
+            "namespaces": {"test_namespace": {"vector_count": 1}}
+        }
+        stats2 = index.describe_index_stats(
+            filter={"$or": [
+                {"key2": {"$eq": 200.58}},
+                {"key3": {"$exists": True}}
+            ]})
+        assert stats2 == {
+            "dimension": 3,
+            "total_vector_count": 3,
+            "namespaces": {"test_namespace": {"vector_count": 3}}
+        }
 
     def test_delete_1(self, index_with_sample_data: IndexInterface) -> None:
         # Delete existing vector
@@ -471,6 +540,12 @@ class TestIndex:
             index_with_sample_data.delete(
                 namespace="test_namespace", delete_all=True, filter = {"key": "value"})
 
+    def test_delete_12(self, index_with_sample_data: IndexInterface) -> None:
+        index_with_sample_data.delete(filter={"$or": [
+            {"key1": "value1"},
+            {"key2": {"$exists": True}}]})
+        assert index_with_sample_data.list() == ["id3"]
+
     def test_query_index(self, index_with_sample_data: IndexInterface) -> None:
         results = index_with_sample_data.query(id="id3", top_k=1, include_values=True)
         assert len(results) == 1
@@ -522,3 +597,101 @@ class TestIndex:
         assert results[1]["id"] == "id3"
         assert results[0]["score"] == pytest.approx(0.0, rel=1e-3)
         assert results[1]["score"] == pytest.approx(1.039, rel=1e-3)
+
+    def test_query_with_filter_1(self, index_cosine: IndexInterface) -> None:
+        index_cosine.upsert([
+            ("id1", [0.1, 0.2, 0.3], {"key": 198}),
+            ("id2", [1, 2, 3.3], {"key": 203}),
+            ("id3", [0.7, 0.8, 0.9], {"key": 188}),
+        ])
+        query_vector = [0.1, 0.2, 0.3]
+        results: List[MatchTypedDict] = index_cosine.query(
+            vector=query_vector, top_k=2, include_values=True,
+            filter={
+                "$or": [
+                    {"$and": [{"key" : {"$lte": 200}}, {"key" : {"$gt": 198}}]},
+                    {"key": {"$lte": 188}},
+                ]
+            })
+        assert len(results) == 1
+        assert results[0]["id"] == "id3"
+        assert results[0]["score"] == pytest.approx(0.959, rel=1e-3)
+
+    def test_query_with_filter_2(self, index_dotproduct: IndexInterface) -> None:
+        index_dotproduct.upsert([
+            ("id1", [0.1, 0.2, 0.3], {"key": 198}),
+            ("id2", [1, 2, 3.3], {"key": 188.5}),
+            ("id3", [0.7, 0.8, 0.9], {"key": 203}),
+        ])
+        query_vector = [0.1, 0.2, 0.3]
+        results: List[MatchTypedDict] = index_dotproduct.query(
+            vector=query_vector, top_k=2, include_values=True,
+            filter={
+                "$or": [
+                    {"$and": [{"key" : {"$lt": 198}}, {"key" : {"$gt": 188.5}}]},
+                    {"key": {"$gte": 203}},
+                ]
+            })
+        assert len(results) == 1
+        assert results[0]["id"] == "id3"
+        assert results[0]["score"] == pytest.approx(0.5, rel=1e-3)
+
+    def test_query_with_filter_3(self, index_euclidean: IndexInterface) -> None:
+        index_euclidean.upsert([
+            ("id1", [0.1, 0.2, 0.3], {"genre": ["action", "comedy"]}),
+            ("id2", [1, 2, 3], {"genre": ["action", "drama"]}),
+            ("id3", [0.7, 0.8, 0.9], {"genre": ["comedy", "drama"]}),
+        ])
+        query_vector = [0.1, 0.2, 0.3]
+        results: List[MatchTypedDict] = index_euclidean.query(
+            vector=query_vector, top_k=2, include_values=False,
+            filter={ "genre": {"$in": ["comedy", "drama"]} })
+        query_vector = [0.1, 0.2, 0.3]
+        assert len(results) == 2
+        assert results[0]["id"] == "id1"
+        assert results[1]["id"] == "id3"
+        assert results[0]["score"] == pytest.approx(0.0, rel=1e-3)
+        assert results[1]["score"] == pytest.approx(1.039, rel=1e-3)
+
+    def test_query_with_filter_4(self, index_euclidean: IndexInterface) -> None:
+        index_euclidean.upsert([
+            ("id1", [-1, -1, -1], {"a": [1, 2, 3], "b": 6, "c": 7.9, "d": True, "e": "action", "f": 1, "h": [9, 10]}),
+            ("id2", [-1, -1, 1], {"a": 3, "b": 5, "c": -5, "d": "drama", "e": "comedy"}),
+            ("id3", [-1, 1, -1], {"a": [2, 3], "b": 5.5, "c": 6.7, "d": ["drama", True], "e": False}),
+            ("id4", [-1, 1, 1], {"a": 3, "b": 4, "c": 8.1, "d": "action"}),
+            ("id5", [1, -1, -1], {"a": 4, "b": 3, "d": "comedy", "g": "extra"}),
+            ("id6", [1, -1, 1], {"b": 6, "c": 7.9, "d": True}),
+            ("id7", [1, 1, -1], {"a": [1, 2], "c": 6.7, "d": ["action", "comedy"], "e": 5}),
+            ("id8", [1, 1, 1], {"a": 7, "b": 8, "c": 9.1, "d": "action", "e": False}),
+        ])
+        query_vector = [0, 0, 0]
+        results: List[MatchTypedDict] = index_euclidean.query(
+            vector=query_vector, top_k=5, include_values=False,
+            filter={"$and":
+                    [
+                        {"a": 3},
+                        {"b": {"$gt": 5.5}},
+                        {"c": {"$lte": 7.9}},
+                        {"d": {"$in": ["drama", True]}},
+                        {"e": {"$nin": [False, 5, "game"]}},
+                        {"f": {"$exists": True}},
+                        {"g": {"$exists": False}},
+                        {"h": {"$ne": 8}}
+                    ]})
+        assert len(results) == 1
+        assert results[0]["id"] == "id1"
+        assert results[0]["score"] == pytest.approx(math.sqrt(3.0), rel=1e-3)
+
+    def test_search_with_vector_index(self, cosine_index_with_vector_index: IndexInterface) -> None:
+        cosine_index_with_vector_index.upsert([
+            (f"id{i}", [0.1 * (i*3+1), 0.1 * (i*3+2), 0.1 * (i*3+3)]) for i in range(1, 1000)
+        ])
+        query_vector = [0.1, 0.2, 0.3]
+        results: List[MatchTypedDict] = cosine_index_with_vector_index.query(
+            vector=query_vector, top_k=2, include_values=True)
+        assert len(results) == 2
+        assert results[0]["id"] == "id1"
+        assert results[1]["id"] == "id2"
+
+        assert results[0]["score"] == pytest.approx(1.0, rel=1e-1)
+        assert results[1]["score"] == pytest.approx(0.9, rel=1e-1)

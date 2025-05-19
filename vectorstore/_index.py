@@ -10,7 +10,7 @@ from vectorstore.metric import Metric
 from vectorstore.stats import IndexStatsTypedDict, NamespaceStatsTypedDict
 
 from .index_model import IndexModel
-from .filter import FilterTypedDict, SimpleFilter
+from .filter import FilterTypedDict, SimpleFilter, _parse_filter
 from .index_interface import IndexInterface, VectorTypedDict
 from .vector import (
     Vector,
@@ -100,6 +100,7 @@ class _Index(IndexInterface):
                            id: Optional[str] = None,
                            prefix: Optional[str] = None,
                            namespace: Optional[str] = None,
+                           namespaces: Optional[List[str]] = None,
                            ids: Optional[List[str]] = None,
                            filter: Optional[FilterTypedDict] = None) -> tuple[List[str], List[Any]]:
         fields = []
@@ -113,34 +114,21 @@ class _Index(IndexInterface):
         if namespace:
             fields.append(f"{NAMESPACE_FIELD} = %s")
             params.append(namespace)
+        if namespaces is not None and len(namespaces) > 0:
+            if not isinstance(namespaces, list):
+                raise ValueError("Namespaces must be a list")
+            if namespace:
+                raise ValueError("Cannot specify both namespace and namespaces")
+            fields.append(f"{NAMESPACE_FIELD} IN ({','.join(['%s'] * len(namespaces))})")
+            params.extend(namespaces)
         if ids:
             fields.append(f"{ID_FIELD} IN ({','.join(['%s'] * len(ids))})")
             params.extend(ids)
-
-        def _parse_filter_conditions(filter: SimpleFilter) -> Tuple[List[str], List[Any]]:
-            fields = []
-            params = []
-            return fields, params
-
         if filter:
-            if not isinstance(filter, dict):
-                raise ValueError("Filter must be a dictionary")
-            if len(filter) == 1:
-                if "$and" in filter:
-                    and_conditions = filter["$and"]
-                    if not isinstance(and_conditions, list):
-                        raise ValueError("$and must be a list of conditions")
-                    for condition in and_conditions:
-                        filter_fields, filter_params = _parse_filter_conditions(condition)
-                        fields.extend(filter_fields)
-                        params.extend(filter_params)
-                else:
-                    filter_fields, filter_params = _parse_filter_conditions(filter)
-                    fields.extend(filter_fields)
-                    params.extend(filter_params)
+            filter_str, filter_params = _parse_filter(filter)
+            fields.append(filter_str)
+            params.extend(filter_params)
 
-            elif len(filter) > 1:
-                raise ValueError("Filter cannot contain multiple conditions at the top level")
         return fields, params
 
     def upsert(
@@ -340,16 +328,26 @@ class _Index(IndexInterface):
         vector: Optional[List[float]] = None,
         id: Optional[str] = None,
         namespace: Optional[str] = None,
+        namespaces: Optional[List[str]] = None,
         filter: Optional[FilterTypedDict] = None,
         include_values: Optional[bool] = None,
         include_metadata: Optional[bool] = None,
+        disable_vector_index_use: Optional[bool] = None,
+        search_options: Optional[Dict[str, int]] = None,
         **kwargs,
     ) -> List[MatchTypedDict]:
         if not vector and not id:
             raise ValueError("Must provide either a vector or an id for querying")
         if vector and id:
             raise ValueError("Cannot provide both a vector and an id for querying")
-        where_fields, params = self._get_where_clauses(namespace=namespace, filter=filter)
+        disable_vector_index = disable_vector_index_use and disable_vector_index_use is True
+        if self.index.use_vector_index is False and disable_vector_index:
+            raise ValueError("Vector index is not enabled for this index, cannot disable it")
+        if search_options and disable_vector_index:
+            raise ValueError("Cannot provide search options when vector index is disabled")
+        if search_options and not self.index.use_vector_index:
+            raise ValueError("Search options can only be used with vector index enabled")
+        where_fields, params = self._get_where_clauses(namespace=namespace, namespaces=namespaces, filter=filter)
         if id:
             vectors = self.fetch([id])
             if len(vectors) == 0:
@@ -368,11 +366,16 @@ class _Index(IndexInterface):
         where_clause = " AND ".join(where_fields)
         where_clause = f"WHERE {where_clause}" if where_clause else ""
         table_name = _get_index_table_name(self.index.name)
+        vector_index_options = ""
+        if disable_vector_index:
+            vector_index_options = "USE INDEX ()"
+        elif search_options:
+            vector_index_options = f" SEARCH_OPTIONS '{json.dumps(search_options)}'"
         sql = f"""
             SELECT {ID_FIELD}, {VECTOR_FIELD}, {METADATA_FIELD},
                    {distance_function}({value_field}, '{formatted_vector}') AS __score
             FROM {table_name} {where_clause}
-            ORDER BY __score ASC
+            ORDER BY __score ASC {vector_index_options}
             LIMIT %s
         """
         params.append(top_k)

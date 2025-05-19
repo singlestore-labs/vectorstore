@@ -118,9 +118,12 @@ class IndexInterface(ABC):
         vector: Optional[List[float]] = None,
         id: Optional[str] = None,
         namespace: Optional[str] = None,
+        namespaces: Optional[List[str]] = None,
         filter: Optional[FilterTypedDict] = None,
         include_values: Optional[bool] = None,
         include_metadata: Optional[bool] = None,
+        disable_vector_index_use: Optional[bool] = None,
+        search_options: Optional[Dict[str, int]] = None,
         **kwargs,
     ) -> List[MatchTypedDict]:
         """

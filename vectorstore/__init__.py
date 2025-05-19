@@ -10,7 +10,7 @@ from .vectordb import VectorDB
 from .stats import IndexStatsTypedDict, NamespaceStatsTypedDict
 from .match import MatchTypedDict
 from .vector import Vector, VectorTuple, VectorTupleWithMetadata, VectorMetadataTypedDict, VectorDictMetadataValue
-from .filter import SimpleFilter, AndFilter, FilterTypedDict, ExactMatchFilter, EqFilter, NeFilter, GtFilter, GteFilter, LtFilter, LteFilter, InFilter, NinFilter
+from .filter import SimpleFilter, AndFilter, OrFilter, FilterTypedDict, ExactMatchFilter, EqFilter, NeFilter, GtFilter, GteFilter, LtFilter, LteFilter, InFilter, NinFilter
 
 try:
     __version__ = metadata.version(__package__)
@@ -44,6 +44,7 @@ __all__ = [
     "LteFilter",
     "InFilter",
     "NinFilter",
+    "OrFilter",
     "IndexStatsTypedDict",
     "NamespaceStatsTypedDict",
     "MatchTypedDict",
