@@ -48,6 +48,14 @@ spell-check:
 # Check all code quality aspects
 check: format-check lint spell-check
 
+# Build package distributions
+build: clean
+	poetry build
+
+# Publish to PyPI
+publish: build
+	poetry publish --username __token__ --password $(PYPI_TOKEN)
+
 # Show help
 help:
 	@echo "Available targets:"
@@ -62,4 +70,6 @@ help:
 	@echo "  lint          - Run linter"
 	@echo "  spell-check   - Check for spelling errors"
 	@echo "  check         - Run all code quality checks"
+	@echo "  build         - Build package distributions"
+	@echo "  publish       - Publish to PyPI"
 	@echo "  help          - Show this help message"
