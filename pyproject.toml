@@ -1,5 +1,5 @@
 [project]
-name = "vectorstore"
+name = "singlestore-vectorstore"
 version = "0.1.0"
 description = "Vector store interface for SingleStore Database"
 authors = [
@@ -13,6 +13,13 @@ dependencies = [
     "sqlalchemy (>=2.0.40,<3.0.0)"
 ]
 
+[project.urls]
+Homepage = "https://github.com/singlestore-labs/vectorstore"
+Issues = "https://github.com/singlestore-labs/vectorstore/issues"
+
+[tool.poetry]
+name = "singlestore-vectorstore"
+packages = [{include = "vectorstore"}]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
