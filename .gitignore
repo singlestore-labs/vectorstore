@@ -1,0 +1,15 @@
+.vscode
+.pytest_cache
+.ruff_cache
+vectorstore/__pycache__
+vectorstore/.pytest_cache
+vectorstore/.mypy_cache
+vectorstore/.coverage
+vectorstore/.coverage.*
+vectorstore/.hypothesis
+vectorstore/.hypothesis.*
+vectorstore/.pytest
+vectorstore/.pytest.*
+tests/integration_tests/__pycache__
+tests/unit_tests/__pycache__
+*.sql

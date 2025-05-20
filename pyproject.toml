@@ -1,0 +1,33 @@
+[project]
+name = "vectorstore"
+version = "0.1.0"
+description = "Vector store interface for SingleStore Database"
+authors = [
+    {name = "Volodymyr Tkachuk",email = "vtkachuk-ua@singlestore.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+
+dependencies = [
+    "singlestoredb (>=1.13.0,<2.0.0)",
+    "sqlalchemy (>=2.0.40,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<4.0"
+
+[tool.poetry.group.test.dependencies]
+pytest = "^8.3.5"
+docker = "^7.1.0"
+pandas = "^2.2.3"
+
+
+[tool.poetry.group.dev.dependencies]
+codespell = "^2.4.1"
+ruff = "^0.11.9"
+
