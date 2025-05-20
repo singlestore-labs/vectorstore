@@ -4,6 +4,7 @@ Filter module for VectorStore.
 This module provides typed filter definitions and utilities to convert
 filter dictionaries into SQL query fragments for metadata filtering.
 """
+
 from __future__ import annotations
 
 import json
@@ -52,7 +53,7 @@ SimpleFilter = Union[
 ]
 
 # Logical operators
-AndFilter = Dict[Literal["$and"], List["FilterTypedDict"]] 
+AndFilter = Dict[Literal["$and"], List["FilterTypedDict"]]
 OrFilter = Dict[Literal["$or"], List["FilterTypedDict"]]
 
 # Overall filter type
@@ -121,8 +122,8 @@ def _parse_filter(filter_dict: FilterTypedDict) -> Tuple[str, List[Any]]:
             # Handle exact match filter
             match_func = _get_match_param_function(field_value)
             return (
-                f"JSON_MATCH_ANY({METADATA_FIELD}::?{field_name}, {match_func} = %s)",
-                [field_value]
+                f"JSON_MATCH_ANY({match_func} = %s, {METADATA_FIELD}, '{field_name}')",
+                [field_value],
             )
 
 
@@ -162,7 +163,9 @@ def _handle_or_filter(filter_dict: OrFilter) -> Tuple[str, List[Any]]:
     return query, params
 
 
-def _handle_operator_filter(field_name: str, field_filter: Dict) -> Tuple[str, List[Any]]:
+def _handle_operator_filter(
+    field_name: str, field_filter: Dict
+) -> Tuple[str, List[Any]]:
     """Handle operator-based field filters like $eq, $gt, etc."""
     if len(field_filter) != 1:
         raise ValueError("Field filter must contain exactly one key")
@@ -174,17 +177,17 @@ def _handle_operator_filter(field_name: str, field_filter: Dict) -> Tuple[str, L
     if operator == "$eq":
         match_func = _get_match_param_function(field_value)
         return (
-            f"JSON_MATCH_ANY({METADATA_FIELD}::?{field_name}, {match_func} = %s)",
-            [field_value]
+            f"JSON_MATCH_ANY({match_func} = %s, {METADATA_FIELD}, '{field_name}')",
+            [field_value],
         )
 
     # Not equal operator
     elif operator == "$ne":
         match_func = _get_match_param_function(field_value)
         return (
-            f"NOT JSON_MATCH_ANY({METADATA_FIELD}::?{field_name}, {match_func} = %s) AND "
+            f"NOT JSON_MATCH_ANY({match_func} = %s, {METADATA_FIELD}, '{field_name}') AND "
             f"JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, '{field_name}')",
-            [field_value]
+            [field_value],
         )
 
     # Numeric comparison operators
@@ -192,16 +195,11 @@ def _handle_operator_filter(field_name: str, field_filter: Dict) -> Tuple[str, L
         if not isinstance(field_value, (int, float)):
             raise ValueError(f"{operator} must be a numeric value")
 
-        comparison_op = {
-            "$gt": ">",
-            "$gte": ">=",
-            "$lt": "<",
-            "$lte": "<="
-        }[operator]
+        comparison_op = {"$gt": ">", "$gte": ">=", "$lt": "<", "$lte": "<="}[operator]
 
         return (
             f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, '{field_name}') {comparison_op} %s",
-            [field_value]
+            [field_value],
         )
 
     # Collection operators
@@ -211,16 +209,16 @@ def _handle_operator_filter(field_name: str, field_filter: Dict) -> Tuple[str, L
 
         if operator == "$in":
             return (
-                f"JSON_MATCH_ANY({METADATA_FIELD}::?{field_name}, "
-                f"JSON_ARRAY_CONTAINS_JSON(%s, MATCH_PARAM_JSON()))",
-                [json.dumps(field_value)]
+                f"JSON_MATCH_ANY(JSON_ARRAY_CONTAINS_JSON(%s, MATCH_PARAM_JSON()), "
+                f"{METADATA_FIELD}, '{field_name}')",
+                [json.dumps(field_value)],
             )
         else:  # $nin
             return (
-                f"NOT JSON_MATCH_ANY({METADATA_FIELD}::?{field_name}, "
-                f"JSON_ARRAY_CONTAINS_JSON(%s, MATCH_PARAM_JSON())) AND "
+                f"NOT JSON_MATCH_ANY(JSON_ARRAY_CONTAINS_JSON(%s, MATCH_PARAM_JSON()), "
+                f"{METADATA_FIELD}, '{field_name}') AND "
                 f"JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, '{field_name}')",
-                [json.dumps(field_value)]
+                [json.dumps(field_value)],
             )
 
     # Existence operator

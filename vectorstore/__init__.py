@@ -1,40 +1,84 @@
+"""
+VectorStore: A vector database library for storing and querying vector embeddings.
+
+This module provides classes and utilities for vector similarity search,
+metadata filtering, and vector index management.
+"""
+
 from importlib import metadata
 
+# Utilities
 from .delete_protection import DeletionProtection
-from .distance_strategy import DistanceStrategy
+
+# Filter types
+from .filter import (
+    # Logical operators
+    AndFilter,
+    EqFilter,
+    # Field filters
+    ExactMatchFilter,
+    # Base filter types
+    FilterTypedDict,
+    GteFilter,
+    GtFilter,
+    InFilter,
+    LteFilter,
+    LtFilter,
+    NeFilter,
+    NinFilter,
+    OrFilter,
+    SimpleFilter,
+)
+from .index_interface import IndexInterface
 from .index_list import IndexList
 from .index_model import IndexModel
-from .metric import Metric
-from .index_interface import IndexInterface
-from .vectordb import VectorDB
-from .stats import IndexStatsTypedDict, NamespaceStatsTypedDict
-from .match import MatchTypedDict
-from .vector import Vector, VectorTuple, VectorTupleWithMetadata, VectorMetadataTypedDict, VectorDictMetadataValue
-from .filter import SimpleFilter, AndFilter, OrFilter, FilterTypedDict, ExactMatchFilter, EqFilter, NeFilter, GtFilter, GteFilter, LtFilter, LteFilter, InFilter, NinFilter
 
+# Result types
+from .match import MatchTypedDict
+
+# Similarity metrics and strategies
+from .metric import Metric
+from .stats import IndexStatsTypedDict, NamespaceStatsTypedDict
+
+# Vector representations
+from .vector import (
+    Vector,
+    VectorDictMetadataValue,
+    VectorMetadataTypedDict,
+    VectorTuple,
+    VectorTupleWithMetadata,
+)
+
+# Core components
+from .vectordb import VectorDB
+
+# Version handling
 try:
     __version__ = metadata.version(__package__)
 except metadata.PackageNotFoundError:
-    # Case where package metadata is not available.
     __version__ = ""
-del metadata  # optional, avoids polluting the results of dir(__package__)
+del metadata  # Avoid polluting the namespace
 
+# Define public API
 __all__ = [
+    # Core components
     "VectorDB",
+    "IndexInterface",
     "IndexModel",
     "IndexList",
-    "IndexInterface",
-    "DeletionProtection",
-    "Metric",
-    "DistanceStrategy",
+    # Vector representations
     "Vector",
     "VectorTuple",
     "VectorTupleWithMetadata",
     "VectorMetadataTypedDict",
     "VectorDictMetadataValue",
+    # Similarity metrics and strategies
+    "Metric",
+    # Filter types
+    "FilterTypedDict",
     "SimpleFilter",
     "AndFilter",
-    "FilterTypedDict",
+    "OrFilter",
     "ExactMatchFilter",
     "EqFilter",
     "NeFilter",
@@ -44,9 +88,12 @@ __all__ = [
     "LteFilter",
     "InFilter",
     "NinFilter",
-    "OrFilter",
+    # Result types
+    "MatchTypedDict",
     "IndexStatsTypedDict",
     "NamespaceStatsTypedDict",
-    "MatchTypedDict",
+    # Utilities
+    "DeletionProtection",
+    # Version
     "__version__",
 ]

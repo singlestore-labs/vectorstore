@@ -1,13 +1,14 @@
 """
 Unit tests for the _get_where_clauses method in _Index class.
 """
-import pytest
-from unittest.mock import patch, MagicMock
 
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from vectorstore._constants import ID_FIELD, NAMESPACE_FIELD
 from vectorstore._index import _Index
 from vectorstore.index_model import IndexModel
-from vectorstore._constants import ID_FIELD, NAMESPACE_FIELD
-from vectorstore.filter import FilterTypedDict
 
 
 @pytest.fixture
@@ -79,11 +80,14 @@ def test_ids_where_clause(index_instance):
     assert params == test_ids
 
 
-@patch('vectorstore._index._parse_filter')
+@patch("vectorstore._index._parse_filter")
 def test_filter_where_clause(mock_parse_filter, index_instance):
     """Test filtering with filter dictionary."""
     # Mock the _parse_filter function
-    mock_filter_result = ("JSON_MATCH_ANY(metadata::?field, MATCH_PARAM_STRING_STRICT() = %s)", ["value"])
+    mock_filter_result = (
+        "JSON_MATCH_ANY(metadata::?field, MATCH_PARAM_STRING_STRICT() = %s)",
+        ["value"],
+    )
     mock_parse_filter.return_value = mock_filter_result
 
     test_filter = {"field": "value"}
@@ -98,8 +102,7 @@ def test_filter_where_clause(mock_parse_filter, index_instance):
 def test_multiple_conditions_where_clause(index_instance):
     """Test combining multiple filtering conditions."""
     fields, params = index_instance._get_where_clauses(
-        id="test_id",
-        namespace="test_namespace"
+        id="test_id", namespace="test_namespace"
     )
 
     assert len(fields) == 2
@@ -108,19 +111,20 @@ def test_multiple_conditions_where_clause(index_instance):
     assert params == ["test_id", "test_namespace"]
 
 
-@patch('vectorstore._index._parse_filter')
+@patch("vectorstore._index._parse_filter")
 def test_complex_where_clause(mock_parse_filter, index_instance):
     """Test complex combination of filtering conditions."""
-    mock_filter_result = ("JSON_MATCH_ANY(metadata::?field, MATCH_PARAM_STRING_STRICT() = %s)", ["value"])
+    mock_filter_result = (
+        "JSON_MATCH_ANY(metadata::?field, MATCH_PARAM_STRING_STRICT() = %s)",
+        ["value"],
+    )
     mock_parse_filter.return_value = mock_filter_result
 
     test_ids = ["id1", "id2"]
     test_filter = {"field": "value"}
 
     fields, params = index_instance._get_where_clauses(
-        ids=test_ids,
-        namespace="test_namespace",
-        filter=test_filter
+        ids=test_ids, namespace="test_namespace", filter=test_filter
     )
 
     assert len(fields) == 3
@@ -135,8 +139,12 @@ def test_complex_where_clause(mock_parse_filter, index_instance):
 
 def test_namespace_conflict_validation(index_instance):
     """Test validation for namespace and namespaces conflict."""
-    with pytest.raises(ValueError, match="Cannot specify both namespace and namespaces"):
-        index_instance._get_where_clauses(namespace="test", namespaces=["test1", "test2"])
+    with pytest.raises(
+        ValueError, match="Cannot specify both namespace and namespaces"
+    ):
+        index_instance._get_where_clauses(
+            namespace="test", namespaces=["test1", "test2"]
+        )
 
 
 def test_namespaces_type_validation(index_instance):
@@ -147,8 +155,11 @@ def test_namespaces_type_validation(index_instance):
 
 def test_all_parameters(index_instance):
     """Test with multiple parameters without conflict."""
-    with patch('vectorstore._index._parse_filter') as mock_parse_filter:
-        mock_filter_result = ("JSON_MATCH_ANY(metadata::?field, MATCH_PARAM_STRING_STRICT() = %s)", ["value"])
+    with patch("vectorstore._index._parse_filter") as mock_parse_filter:
+        mock_filter_result = (
+            "JSON_MATCH_ANY(metadata::?field, MATCH_PARAM_STRING_STRICT() = %s)",
+            ["value"],
+        )
         mock_parse_filter.return_value = mock_filter_result
 
         test_ids = ["id1", "id2"]
@@ -160,7 +171,7 @@ def test_all_parameters(index_instance):
             prefix="test_prefix",
             namespace="test_namespace",  # Using only namespace, not namespaces
             ids=test_ids,
-            filter=test_filter
+            filter=test_filter,
         )
 
         # Should have all conditions
@@ -172,5 +183,7 @@ def test_all_parameters(index_instance):
         assert mock_filter_result[0] in fields
 
         # Parameters should be in the correct order based on how fields were added
-        expected_params = ["test_id", "test_prefix%", "test_namespace"] + test_ids + ["value"]
+        expected_params = (
+            ["test_id", "test_prefix%", "test_namespace"] + test_ids + ["value"]
+        )
         assert params == expected_params

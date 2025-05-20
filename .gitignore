@@ -1,4 +1,6 @@
 .vscode
+.pytest_cache
+.ruff_cache
 vectorstore/__pycache__
 vectorstore/.pytest_cache
 vectorstore/.mypy_cache

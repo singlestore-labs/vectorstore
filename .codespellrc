@@ -1,0 +1,3 @@
+[codespell]
+ignore-words-list = $nin,nin
+skip = .git,__pycache__,build,dist

@@ -4,40 +4,67 @@ from typing import Any, Dict, List, Optional, Union
 from vectorstore.match import MatchTypedDict
 from vectorstore.stats import IndexStatsTypedDict
 
+from .filter import FilterTypedDict
 from .vector import (
     Vector,
     VectorMetadataTypedDict,
     VectorTuple,
     VectorTupleWithMetadata,
-    VectorDictMetadataValue,
-    VectorTypedDict
+    VectorTypedDict,
 )
 
-from .filter import FilterTypedDict
 
 class IndexInterface(ABC):
     @abstractmethod
     def upsert(
         self,
         vectors: Union[
-            List[Vector], List[VectorTuple], List[VectorTupleWithMetadata], List[VectorTypedDict]
+            List[Vector],
+            List[VectorTuple],
+            List[VectorTupleWithMetadata],
+            List[VectorTypedDict],
         ],
         namespace: Optional[str] = None,
         **kwargs,
     ) -> int:
+        """
+        Insert or update vectors in the index.
+
+        The upsert operation writes vectors into a namespace. If a vector already exists with the
+        same ID, it will be overwritten. For SingleStore DB, this uses the REPLACE INTO SQL operation.
+
+        Args:
+            vectors: List of vectors in supported formats:
+                - Vector objects
+                - Tuples of (id, values) without metadata
+                - Tuples of (id, values, metadata) with metadata
+                - Dictionaries with 'id', 'values', and 'metadata' keys
+            namespace: Optional namespace to organize vectors
+            **kwargs: Additional arguments
+
+        Returns:
+            Number of vectors successfully upserted or updated
+
+        """
         pass
 
     @abstractmethod
     def upsert_from_dataframe(
         self, df, namespace: Optional[str] = None, batch_size: int = 500
-    ):
-        """Upserts a dataframe into the index.
+    ) -> int:
+        """
+        Upserts vectors from a pandas DataFrame into the index.
+
+        The DataFrame is processed in batches to avoid memory issues with large datasets.
+        Each row in the DataFrame should contain 'id', 'values', and optionally 'metadata'.
 
         Args:
-            df: A pandas dataframe with the following columns: id, values, sparse_values, and metadata.
-            namespace: The namespace to upsert into.
-            batch_size: The number of rows to upsert in a single batch.
-            show_progress: Whether to show a progress bar.
+            df: A pandas DataFrame with columns: 'id', 'values', and optionally 'metadata'
+            namespace: Optional namespace to organize vectors
+            batch_size: Number of rows to process in each batch (default: 500)
+
+        Returns:
+            Number of vectors successfully upserted
         """
         pass
 
@@ -51,69 +78,56 @@ class IndexInterface(ABC):
         **kwargs,
     ) -> Dict[str, Any]:
         """
+        Delete vectors from the index based on provided criteria.
+
+        Vectors can be deleted by ID, by filter, or all vectors in a namespace.
+        The operation uses the SQL DELETE statement with appropriate WHERE clauses.
+
         Args:
-            ids (List[str]): Vector ids to delete [optional]
-            delete_all (bool): This indicates that all vectors in the index namespace should be deleted.. [optional]
-                                Default is False.
-            namespace (str): The namespace to delete vectors from [optional]
-                            If not specified, the default namespace is used.
-            filter (Dict[str, Union[str, float, int, bool, List, dict]]):
-                    If specified, the metadata filter here will be used to select the vectors to delete.
-                    This is mutually exclusive with specifying ids to delete in the ids param or using delete_all=True.
-                    See https://www.pinecone.io/docs/metadata-filtering/.. [optional]
+            ids: List of vector IDs to delete
+            delete_all: If True, delete all vectors (use with caution)
+            namespace: Namespace to delete from
+            filter: Filter condition for deletion using metadata
+            **kwargs: Additional arguments
 
+        Returns:
+            Empty dict on success
 
-        The Delete operation deletes vectors from the index, from a single namespace.
+        Raises:
+            ValueError: If the deletion criteria are invalid or conflicting
 
-        No error is raised if the vector id does not exist.
-
-        Note: For any delete call, if namespace is not specified, the default namespace `""` is used.
-        Since the delete operation does not error when ids are not present, this means you may not receive
-        an error if you delete from the wrong namespace.
-
-        Delete can occur in the following mutual exclusive ways:
-        1. Delete by ids from a single namespace
-        2. Delete all vectors from a single namespace by setting delete_all to True
-        3. Delete all vectors from a single namespace by specifying a metadata filter
-            (note that for this option delete all must be set to False)
-
-        API reference: https://docs.pinecone.io/reference/delete_post
-
-        Examples:
-            >>> index.delete(ids=['id1', 'id2'], namespace='my_namespace')
-            >>> index.delete(delete_all=True, namespace='my_namespace')
-            >>> index.delete(filter={'key': 'value'}, namespace='my_namespace')
-
-
-          Returns: An empty dictionary if the delete operation was successful.
+        Note:
+            - Cannot specify both ids and filter simultaneously
+            - Cannot use delete_all with ids or filter
+            - Must specify at least one of: ids, delete_all, or filter
         """
         pass
 
     @abstractmethod
-    def fetch(self, ids: List[str], namespace: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+    def fetch(
+        self, ids: List[str], namespace: Optional[str] = None, **kwargs
+    ) -> Dict[str, Vector]:
         """
-        The fetch operation looks up and returns vectors, by ID, from a single namespace.
-        The returned vectors include the vector data and/or metadata.
+        Fetch vectors by their IDs from the index.
 
-        API reference: https://docs.pinecone.io/reference/fetch
-
-        Examples:
-            >>> index.fetch(ids=['id1', 'id2'], namespace='my_namespace')
-            >>> index.fetch(ids=['id1', 'id2'])
+        Retrieves complete vector data including IDs, vector values, and metadata
+        for the specified vector IDs.
 
         Args:
-            ids (List[str]): The vector IDs to fetch.
-            namespace (str): The namespace to fetch vectors from.
-                             If not specified, the default namespace is used. [optional]
+            ids: List of vector IDs to retrieve
+            namespace: Optional namespace to fetch from
+            **kwargs: Additional arguments
 
-        Returns: FetchResponse object which contains the list of Vector objects, and namespace name.
+        Returns:
+            Dictionary mapping vector IDs to Vector objects containing
+            the complete vector data (id, values, and metadata)
         """
         pass
 
     @abstractmethod
     def query(
         self,
-        *args,
+        *,
         top_k: int,
         vector: Optional[List[float]] = None,
         id: Optional[str] = None,
@@ -127,44 +141,30 @@ class IndexInterface(ABC):
         **kwargs,
     ) -> List[MatchTypedDict]:
         """
-        The Query operation searches a namespace, using a query vector.
-        It retrieves the ids of the most similar items in a namespace, along with their similarity scores.
+        Query the index for vectors similar to the provided vector or ID.
 
-        API reference: https://docs.pinecone.io/reference/query
-
-        Examples:
-            >>> index.query(vector=[1, 2, 3], top_k=10, namespace='my_namespace')
-            >>> index.query(id='id1', top_k=10, namespace='my_namespace')
-            >>> index.query(vector=[1, 2, 3], top_k=10, namespace='my_namespace', filter={'key': 'value'})
-            >>> index.query(id='id1', top_k=10, namespace='my_namespace', include_metadata=True, include_values=True)
-            >>> index.query(vector=[1, 2, 3], sparse_vector={'indices': [1, 2], 'values': [0.2, 0.4]},
-            >>>             top_k=10, namespace='my_namespace')
-            >>> index.query(vector=[1, 2, 3], sparse_vector=SparseValues([1, 2], [0.2, 0.4]),
-            >>>             top_k=10, namespace='my_namespace')
+        Performs similarity search using the configured distance metric (dot product,
+        cosine similarity, or Euclidean distance). Results can be filtered by metadata.
 
         Args:
-            vector (List[float]): The query vector. This should be the same length as the dimension of the index
-                                  being queried. Each `query()` request can contain only one of the parameters
-                                  `id` or `vector`.. [optional]
-            id (str): The unique ID of the vector to be used as a query vector.
-                      Each `query()` request can contain only one of the parameters
-                      `vector` or  `id`. [optional]
-            top_k (int): The number of results to return for each query. Must be an integer greater than 1.
-            namespace (str): The namespace to query vectors from.
-                             If not specified, the default namespace is used. [optional]
-            filter (Dict[str, Union[str, float, int, bool, List, dict]):
-                    The filter to apply. You can use vector metadata to limit your search.
-                    See https://www.pinecone.io/docs/metadata-filtering/.. [optional]
-            include_values (bool): Indicates whether vector values are included in the response.
-                                   If omitted the server will use the default value of False [optional]
-            include_metadata (bool): Indicates whether metadata is included in the response as well as the ids.
-                                     If omitted the server will use the default value of False  [optional]
-            sparse_vector: (Union[SparseValues, Dict[str, Union[List[float], List[int]]]]): sparse values of the query vector.
-                            Expected to be either a SparseValues object or a dict of the form:
-                             {'indices': List[int], 'values': List[float]}, where the lists each have the same length.
+            top_k: Number of most similar vectors to return
+            vector: Query vector values for similarity search
+            id: ID of an existing vector to use as the query vector
+            namespace: Single namespace to search in
+            namespaces: Multiple namespaces to search in (mutually exclusive with namespace)
+            filter: Metadata filter to apply during search
+            include_values: Whether to include vector values in results
+            include_metadata: Whether to include metadata in results
+            disable_vector_index_use: If True, disable vector index use for this query
+            search_options: Dictionary of search options for the vector index
+            **kwargs: Additional arguments
 
-        Returns: QueryResponse object which contains the list of the closest vectors as ScoredVector objects,
-                 and namespace name.
+        Returns:
+            List of matching vectors with similarity scores and optional metadata/values
+
+        Raises:
+            ValueError: If neither vector nor id is provided, or if both are provided
+            ValueError: If vector index configuration parameters are invalid
         """
         pass
 
@@ -178,33 +178,23 @@ class IndexInterface(ABC):
         **kwargs,
     ) -> Dict[str, Any]:
         """
-        The Update operation updates vector in a namespace.
-        If a value is included, it will overwrite the previous value.
-        If a set_metadata is included,
-        the values of the fields specified in it will be added or overwrite the previous value.
+        Update an existing vector's values and/or metadata.
 
-        API reference: https://docs.pinecone.io/reference/update
-
-        Examples:
-            >>> index.update(id='id1', values=[1, 2, 3], namespace='my_namespace')
-            >>> index.update(id='id1', set_metadata={'key': 'value'}, namespace='my_namespace')
-            >>> index.update(id='id1', values=[1, 2, 3], sparse_values={'indices': [1, 2], 'values': [0.2, 0.4]},
-            >>>              namespace='my_namespace')
-            >>> index.update(id='id1', values=[1, 2, 3], sparse_values=SparseValues(indices=[1, 2], values=[0.2, 0.4]),
-            >>>              namespace='my_namespace')
+        Updates values, metadata, or both for a vector with the specified ID.
+        For SingleStoreDB, this uses the SQL UPDATE statement.
 
         Args:
-            id (str): Vector's unique id.
-            values (List[float]): vector values to set. [optional]
-            set_metadata (Dict[str, Union[str, float, int, bool, List[int], List[float], List[str]]]]):
-                metadata to set for vector. [optional]
-            namespace (str): Namespace name where to update the vector.. [optional]
-            sparse_values: (Dict[str, Union[List[float], List[int]]]): sparse values to update for the vector.
-                           Expected to be either a SparseValues object or a dict of the form:
-                           {'indices': List[int], 'values': List[float]} where the lists each have the same length.
+            id: Vector ID to update
+            values: New vector values to set (optional)
+            set_metadata: New metadata to set (optional)
+            namespace: Namespace containing the vector (optional)
+            **kwargs: Additional arguments
 
+        Returns:
+            Empty dict on success
 
-        Returns: An empty dictionary if the update was successful.
+        Raises:
+            ValueError: If neither values nor set_metadata is provided
         """
         pass
 
@@ -213,49 +203,38 @@ class IndexInterface(ABC):
         self, filter: Optional[FilterTypedDict] = None, **kwargs
     ) -> IndexStatsTypedDict:
         """
-        The DescribeIndexStats operation returns statistics about the index's contents.
-        For example: The vector count per namespace and the number of dimensions.
+        Get statistics about the index contents.
 
-        API reference: https://docs.pinecone.io/reference/describe_index_stats_post
-
-        Examples:
-            >>> index.describe_index_stats()
-            >>> index.describe_index_stats(filter={'key': 'value'})
+        Returns information about vector counts per namespace, dimension size,
+        and total vector count. Optionally filter statistics by metadata.
 
         Args:
-            filter (Dict[str, Union[str, float, int, bool, List, dict]]):
-            If this parameter is present, the operation only returns statistics for vectors that satisfy the filter.
-            See https://www.pinecone.io/docs/metadata-filtering/.. [optional]
+            filter: Metadata filter to limit statistics to matching vectors (optional)
+            **kwargs: Additional arguments
 
-        Returns: DescribeIndexStatsResponse object which contains stats about the index.
-        """
-        pass
-
-
-    @abstractmethod
-    def list(self, prefix: Optional[str], namespace: Optional[str]) -> List[str]:
-        """
-        The list operation accepts all of the same arguments as list_paginated, and returns a generator that yields
-        a list of the matching vector ids in each page of results. It automatically handles pagination tokens on your
-        behalf.
-
-        Examples:
-            >>> for ids in index.list(prefix='99', limit=5, namespace='my_namespace'):
-            >>>     print(ids)
-            ['99', '990', '991', '992', '993']
-            ['994', '995', '996', '997', '998']
-            ['999']
-
-        Args:
-            prefix (Optional[str]): The id prefix to match. If unspecified, an empty string prefix will
-                                    be used with the effect of listing all ids in a namespace [optional]
-            limit (Optional[int]): The maximum number of ids to return. If unspecified, the server will use a default value. [optional]
-            pagination_token (Optional[str]): A token needed to fetch the next page of results. This token is returned
-                in the response if additional results are available. [optional]
-            namespace (Optional[str]): The namespace to fetch vectors from. If not specified, the default namespace is used. [optional]
+        Returns:
+            IndexStatsTypedDict containing:
+              - dimension: Vector dimension size
+              - total_vector_count: Total number of vectors across all namespaces
+              - namespaces: Dictionary mapping namespace names to statistics
         """
         pass
 
     @abstractmethod
-    def fetch(self, ids: List[str], namespace: Optional[str] = None, **kwargs) -> Dict[str, Vector]:
+    def list(
+        self, prefix: Optional[str] = None, namespace: Optional[str] = None
+    ) -> List[str]:
+        """
+        List vector IDs in the index, optionally filtered by prefix and namespace.
+
+        Retrieves all vector IDs that match the given prefix within the specified namespace.
+        Results are sorted by ID.
+
+        Args:
+            prefix: Optional ID prefix to filter results
+            namespace: Optional namespace to list from
+
+        Returns:
+            List of matching vector IDs sorted in ascending order
+        """
         pass

@@ -1,4 +1,8 @@
 class IndexList:
+    """
+    A simple class to hold a list of indices
+    """
+
     def __init__(self, index_list):
         self.index_list = index_list
 

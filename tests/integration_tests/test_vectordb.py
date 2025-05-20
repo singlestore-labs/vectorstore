@@ -1,54 +1,12 @@
-from typing import Generator
 import pytest
-
-from singlestoredb.server import docker
-from singlestoredb.connection import Connection
 from singlestoredb import connect
+from singlestoredb.connection import Connection
+from sqlalchemy.pool import Pool
 
-from sqlalchemy.pool import Pool, QueuePool
+from vectorstore import DeletionProtection, Metric, VectorDB
 
-from vectorstore import VectorDB, Metric, DeletionProtection, DistanceStrategy
 
 class TestVectorDB:
-    @pytest.fixture(scope="class")
-    def docker_server_url(self) -> Generator[str, None, None]:
-        sdb = docker.start(license="")
-        conn = sdb.connect()
-        curr = conn.cursor()
-        curr.execute("create database test_vectorstore")
-        curr.close()
-        conn.close()
-        yield sdb.connection_url
-        sdb.stop()
-    
-    @pytest.fixture(scope="function")
-    def clean_db_url(self, docker_server_url) -> Generator[str, None, None]:
-        yield docker_server_url
-        conn = connect(host=docker_server_url, database="test_vectorstore")
-        curr = conn.cursor()
-        curr.execute("show tables")
-        results = curr.fetchall()
-        for result in results:
-            curr.execute(f"drop table {result[0]}")
-        curr.close()
-        conn.close()
-
-    @pytest.fixture(scope="function")
-    def clean_db_connection(self, clean_db_url: str) -> Generator[Connection, None, None]:
-        conn = connect(host=clean_db_url, database="test_vectorstore")
-        yield conn
-        conn.close()
-
-    @pytest.fixture(scope="function")
-    def clean_connection_params(self, clean_db_url: str) -> dict:
-        return {"host" : clean_db_url, "database" : "test_vectorstore"}
-
-    @pytest.fixture(scope="function")
-    def clean_connection_pool(self, clean_db_url: str) -> Pool:
-        def _create_connection() -> Connection:
-            return connect(host=clean_db_url, database="test_vectorstore")
-        return QueuePool(creator=_create_connection)
-    
     def test_initialize_with_connection(self, clean_db_connection: Connection):
         db: VectorDB = VectorDB(connection=clean_db_connection)
         assert len(db.list_indexes()) == 0
@@ -91,17 +49,24 @@ class TestVectorDB:
 
     def test_create_index1(slef, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        index = db.create_index(name="test_index1", dimension=128, metric="cosine", deletion_protection="enabled")
+        index = db.create_index(
+            name="test_index1",
+            dimension=128,
+            metric="cosine",
+            deletion_protection="enabled",
+        )
         assert index.name == "test_index1"
         assert index.dimension == 128
         assert index.metric == Metric.COSINE
         assert index.deletion_protection == DeletionProtection.ENABLED
         assert index.tags == {}
         assert index.use_vector_index is False
-        assert index.vector_index_options == {'metric_type': DistanceStrategy.DOT_PRODUCT.value}
+        assert index.vector_index_options == {"metric_type": "DOT_PRODUCT"}
         conn = connect(**clean_connection_params)
         curr = conn.cursor()
-        curr.execute("select name, dimension, metric, deletion_protection, use_vector_index, vector_index_options, tags from vector_indexes where name = 'test_index1'")
+        curr.execute(
+            "select name, dimension, metric, deletion_protection, use_vector_index, vector_index_options, tags from vector_indexes where name = 'test_index1'"
+        )
         result = curr.fetchone()
         assert result is not None
         assert result[0] == "test_index1"
@@ -109,35 +74,43 @@ class TestVectorDB:
         assert result[2] == Metric.COSINE.value
         assert result[3] == 1
         assert result[4] == 0
-        assert result[5] == {"metric_type": DistanceStrategy.DOT_PRODUCT.value}
+        assert result[5] == {"metric_type": "DOT_PRODUCT"}
         assert result[6] == {}
         curr.close()
         conn.close()
 
     def test_create_index2(self, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        index = db.create_index(name="test_index2",
-                                dimension=256,
-                                metric=Metric.EUCLIDEAN,
-                                deletion_protection=DeletionProtection.DISABLED,
-                                use_vector_index=True,
-                                vector_index_options={"index_type":"IVF_PQFS", "nlist":1024, "nprobe":20},
-                                tags={"tag1":"value1", "tag2":"value2"})
+        index = db.create_index(
+            name="test_index2",
+            dimension=256,
+            metric=Metric.EUCLIDEAN,
+            deletion_protection=DeletionProtection.DISABLED,
+            use_vector_index=True,
+            vector_index_options={
+                "index_type": "IVF_PQFS",
+                "nlist": 1024,
+                "nprobe": 20,
+            },
+            tags={"tag1": "value1", "tag2": "value2"},
+        )
         assert index.name == "test_index2"
         assert index.dimension == 256
         assert index.metric == Metric.EUCLIDEAN
         assert index.deletion_protection == DeletionProtection.DISABLED
-        assert index.tags == {"tag1":"value1", "tag2":"value2"}
+        assert index.tags == {"tag1": "value1", "tag2": "value2"}
         assert index.use_vector_index is True
         assert index.vector_index_options == {
-            "index_type":"IVF_PQFS",
-            "nlist":1024,
-            "nprobe":20,
-            "metric_type": DistanceStrategy.EUCLIDEAN_DISTANCE.value,
+            "index_type": "IVF_PQFS",
+            "nlist": 1024,
+            "nprobe": 20,
+            "metric_type": "EUCLIDEAN_DISTANCE",
         }
         conn = connect(**clean_connection_params)
         curr = conn.cursor()
-        curr.execute("select name, dimension, metric, deletion_protection, use_vector_index, vector_index_options, tags from vector_indexes where name = 'test_index2'")
+        curr.execute(
+            "select name, dimension, metric, deletion_protection, use_vector_index, vector_index_options, tags from vector_indexes where name = 'test_index2'"
+        )
         result = curr.fetchone()
         assert result is not None
         assert result[0] == "test_index2"
@@ -146,39 +119,47 @@ class TestVectorDB:
         assert result[3] == 0
         assert result[4] == 1
         assert result[5] == {
-            "index_type":"IVF_PQFS",
-            "nlist":1024,
-            "nprobe":20,
-            "metric_type": DistanceStrategy.EUCLIDEAN_DISTANCE.value,
+            "index_type": "IVF_PQFS",
+            "nlist": 1024,
+            "nprobe": 20,
+            "metric_type": "EUCLIDEAN_DISTANCE",
         }
-        assert result[6] == {"tag1":"value1", "tag2":"value2"}
+        assert result[6] == {"tag1": "value1", "tag2": "value2"}
         curr.close()
         conn.close()
 
     def test_create_index3(self, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        index = db.create_index(name="test_index3",
-                                dimension=512,
-                                metric=Metric.COSINE,
-                                deletion_protection=DeletionProtection.DISABLED,
-                                use_vector_index=True,
-                                vector_index_options={"index_type":"IVF_FLAT", "nlist":1024, "nprobe":20},
-                                tags={"tag1":"value1", "tag2":"value2"})
+        index = db.create_index(
+            name="test_index3",
+            dimension=512,
+            metric=Metric.COSINE,
+            deletion_protection=DeletionProtection.DISABLED,
+            use_vector_index=True,
+            vector_index_options={
+                "index_type": "IVF_FLAT",
+                "nlist": 1024,
+                "nprobe": 20,
+            },
+            tags={"tag1": "value1", "tag2": "value2"},
+        )
         assert index.name == "test_index3"
         assert index.dimension == 512
         assert index.metric == Metric.COSINE
         assert index.deletion_protection == DeletionProtection.DISABLED
-        assert index.tags == {"tag1":"value1", "tag2":"value2"}
+        assert index.tags == {"tag1": "value1", "tag2": "value2"}
         assert index.use_vector_index is True
         assert index.vector_index_options == {
-            "index_type":"IVF_FLAT",
-            "nlist":1024,
-            "nprobe":20,
-            "metric_type": DistanceStrategy.DOT_PRODUCT.value,
+            "index_type": "IVF_FLAT",
+            "nlist": 1024,
+            "nprobe": 20,
+            "metric_type": "DOT_PRODUCT",
         }
         conn = connect(**clean_connection_params)
         curr = conn.cursor()
-        curr.execute("select name, dimension, metric, deletion_protection, use_vector_index, vector_index_options, tags from vector_indexes where name = 'test_index3'")
+        curr.execute(
+            "select name, dimension, metric, deletion_protection, use_vector_index, vector_index_options, tags from vector_indexes where name = 'test_index3'"
+        )
         result = curr.fetchone()
         assert result is not None
         assert result[0] == "test_index3"
@@ -187,18 +168,23 @@ class TestVectorDB:
         assert result[3] == 0
         assert result[4] == 1
         assert result[5] == {
-            "index_type":"IVF_FLAT",
-            "nlist":1024,
-            "nprobe":20,
-            "metric_type": DistanceStrategy.DOT_PRODUCT.value,
+            "index_type": "IVF_FLAT",
+            "nlist": 1024,
+            "nprobe": 20,
+            "metric_type": "DOT_PRODUCT",
         }
-        assert result[6] == {"tag1":"value1", "tag2":"value2"}
+        assert result[6] == {"tag1": "value1", "tag2": "value2"}
         curr.close()
         conn.close()
 
     def test_delete_index_success(self, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        db.create_index(name="test_index4", dimension=128, metric=Metric.COSINE, deletion_protection=DeletionProtection.DISABLED)
+        db.create_index(
+            name="test_index4",
+            dimension=128,
+            metric=Metric.COSINE,
+            deletion_protection=DeletionProtection.DISABLED,
+        )
         connection = connect(**clean_connection_params)
         curr = connection.cursor()
         curr.execute("select name from vector_indexes where name = 'test_index4'")
@@ -227,7 +213,12 @@ class TestVectorDB:
 
     def test_delete_index_protection(self, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        db.create_index(name="test_index5", dimension=128, metric=Metric.COSINE, deletion_protection=DeletionProtection.ENABLED)
+        db.create_index(
+            name="test_index5",
+            dimension=128,
+            metric=Metric.COSINE,
+            deletion_protection=DeletionProtection.ENABLED,
+        )
         with pytest.raises(Exception):
             db.delete_index("test_index5")
         connection = connect(**clean_connection_params)
@@ -244,20 +235,36 @@ class TestVectorDB:
 
     def test_has_index(self, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        db.create_index(name="test_index6", dimension=128, metric=Metric.COSINE, deletion_protection=DeletionProtection.DISABLED)
+        db.create_index(
+            name="test_index6",
+            dimension=128,
+            metric=Metric.COSINE,
+            deletion_protection=DeletionProtection.DISABLED,
+        )
         assert db.has_index("test_index6") is True
         assert db.has_index("test_index7") is False
 
     def test_list_indexes(self, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        db.create_index(name="test_index8",
-                        dimension=128,
-                        metric=Metric.COSINE,
-                        deletion_protection=DeletionProtection.DISABLED,
-                        tags={"tag1":"value1", "tag2":"value2"},
-                        use_vector_index=True,
-                        vector_index_options={"index_type":"IVF_FLAT", "nlist":1024, "nprobe":20})
-        db.create_index(name="test_index9", dimension=256, metric=Metric.EUCLIDEAN, deletion_protection=DeletionProtection.ENABLED)
+        db.create_index(
+            name="test_index8",
+            dimension=128,
+            metric=Metric.COSINE,
+            deletion_protection=DeletionProtection.DISABLED,
+            tags={"tag1": "value1", "tag2": "value2"},
+            use_vector_index=True,
+            vector_index_options={
+                "index_type": "IVF_FLAT",
+                "nlist": 1024,
+                "nprobe": 20,
+            },
+        )
+        db.create_index(
+            name="test_index9",
+            dimension=256,
+            metric=Metric.EUCLIDEAN,
+            deletion_protection=DeletionProtection.ENABLED,
+        )
         indexes = db.list_indexes()
         assert len(indexes) == 2
         assert indexes[0].name == "test_index8"
@@ -268,49 +275,57 @@ class TestVectorDB:
         assert indexes[1].metric == Metric.EUCLIDEAN
         assert indexes[0].deletion_protection == DeletionProtection.DISABLED
         assert indexes[1].deletion_protection == DeletionProtection.ENABLED
-        assert indexes[0].tags == {"tag1":"value1", "tag2":"value2"}
+        assert indexes[0].tags == {"tag1": "value1", "tag2": "value2"}
         assert indexes[1].tags == {}
         assert indexes[0].use_vector_index is True
         assert indexes[1].use_vector_index is False
         assert indexes[0].vector_index_options == {
-            "index_type":"IVF_FLAT",
-            "nlist":1024,
-            "nprobe":20,
-            "metric_type": DistanceStrategy.DOT_PRODUCT.value,
+            "index_type": "IVF_FLAT",
+            "nlist": 1024,
+            "nprobe": 20,
+            "metric_type": "DOT_PRODUCT",
         }
         assert indexes[1].vector_index_options == {
-            "metric_type": DistanceStrategy.EUCLIDEAN_DISTANCE.value,
+            "metric_type": "EUCLIDEAN_DISTANCE",
         }
 
     def test_describe_index1(self, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        db.create_index(name="test_index10",
-                        dimension=128,
-                        metric=Metric.COSINE,
-                        deletion_protection=DeletionProtection.DISABLED,
-                        tags={"tag1":"value1", "tag2":"value2"},
-                        use_vector_index=True,
-                        vector_index_options={"index_type":"IVF_FLAT", "nlist":1024, "nprobe":20})
+        db.create_index(
+            name="test_index10",
+            dimension=128,
+            metric=Metric.COSINE,
+            deletion_protection=DeletionProtection.DISABLED,
+            tags={"tag1": "value1", "tag2": "value2"},
+            use_vector_index=True,
+            vector_index_options={
+                "index_type": "IVF_FLAT",
+                "nlist": 1024,
+                "nprobe": 20,
+            },
+        )
         index = db.describe_index("test_index10")
         assert index.name == "test_index10"
         assert index.dimension == 128
         assert index.metric == Metric.COSINE
         assert index.deletion_protection == DeletionProtection.DISABLED
-        assert index.tags == {"tag1":"value1", "tag2":"value2"}
+        assert index.tags == {"tag1": "value1", "tag2": "value2"}
         assert index.use_vector_index is True
         assert index.vector_index_options == {
-            "index_type":"IVF_FLAT",
-            "nlist":1024,
-            "nprobe":20,
-            "metric_type": DistanceStrategy.DOT_PRODUCT.value,
+            "index_type": "IVF_FLAT",
+            "nlist": 1024,
+            "nprobe": 20,
+            "metric_type": "DOT_PRODUCT",
         }
-    
+
     def test_describe_index2(self, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        db.create_index(name="test_index11",
-                        dimension=256,
-                        metric=Metric.DOTPRODUCT,
-                        deletion_protection=DeletionProtection.ENABLED)
+        db.create_index(
+            name="test_index11",
+            dimension=256,
+            metric=Metric.DOTPRODUCT,
+            deletion_protection=DeletionProtection.ENABLED,
+        )
         index = db.describe_index("test_index11")
         assert index.name == "test_index11"
         assert index.dimension == 256
@@ -319,7 +334,7 @@ class TestVectorDB:
         assert index.tags == {}
         assert index.use_vector_index is False
         assert index.vector_index_options == {
-            "metric_type": DistanceStrategy.DOT_PRODUCT.value,
+            "metric_type": "DOT_PRODUCT",
         }
 
     def test_describe_index_not_found(self, clean_connection_params: dict):
@@ -329,44 +344,60 @@ class TestVectorDB:
 
     def test_configure_index1(self, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        db.create_index(name="test_index12",
-                        dimension=128,
-                        metric=Metric.COSINE,
-                        deletion_protection=DeletionProtection.DISABLED,
-                        tags={"tag1":"value1", "tag2":"value2"},
-                        use_vector_index=True,
-                        vector_index_options={"index_type":"IVF_FLAT", "nlist":1024, "nprobe":20})
-        index = db.configure_index("test_index12",
-                           deletion_protection=DeletionProtection.ENABLED,
-                           tags={"tag3":"value3", "tag4":"value4"},
-                           use_vector_index=False)
+        db.create_index(
+            name="test_index12",
+            dimension=128,
+            metric=Metric.COSINE,
+            deletion_protection=DeletionProtection.DISABLED,
+            tags={"tag1": "value1", "tag2": "value2"},
+            use_vector_index=True,
+            vector_index_options={
+                "index_type": "IVF_FLAT",
+                "nlist": 1024,
+                "nprobe": 20,
+            },
+        )
+        index = db.configure_index(
+            "test_index12",
+            deletion_protection=DeletionProtection.ENABLED,
+            tags={"tag3": "value3", "tag4": "value4"},
+            use_vector_index=False,
+        )
         assert index.name == "test_index12"
         assert index.dimension == 128
         assert index.metric == Metric.COSINE
         assert index.deletion_protection == DeletionProtection.ENABLED
-        assert index.tags == {"tag3":"value3", "tag4":"value4"}
+        assert index.tags == {"tag3": "value3", "tag4": "value4"}
         assert index.use_vector_index is False
         assert index.vector_index_options == {
-            "metric_type": DistanceStrategy.DOT_PRODUCT.value,
+            "metric_type": "DOT_PRODUCT",
         }
 
     def test_configure_index2(self, clean_connection_params: dict):
         db: VectorDB = VectorDB(**clean_connection_params)
-        db.create_index(name="test_index13",
-                        dimension=256,
-                        metric=Metric.EUCLIDEAN,
-                        deletion_protection=DeletionProtection.DISABLED,
-                        tags={"tag1":"value1", "tag2":"value2"},
-                        use_vector_index=True,
-                        vector_index_options={"index_type":"IVF_FLAT", "nlist":1024, "nprobe":20})
+        db.create_index(
+            name="test_index13",
+            dimension=256,
+            metric=Metric.EUCLIDEAN,
+            deletion_protection=DeletionProtection.DISABLED,
+            tags={"tag1": "value1", "tag2": "value2"},
+            use_vector_index=True,
+            vector_index_options={
+                "index_type": "IVF_FLAT",
+                "nlist": 1024,
+                "nprobe": 20,
+            },
+        )
         index = db.configure_index("test_index13")
         assert index.name == "test_index13"
         assert index.dimension == 256
         assert index.metric == Metric.EUCLIDEAN
         assert index.deletion_protection == DeletionProtection.DISABLED
-        assert index.tags == {"tag1":"value1", "tag2":"value2"}
+        assert index.tags == {"tag1": "value1", "tag2": "value2"}
         assert index.use_vector_index is True
         assert index.vector_index_options == {
-            "metric_type": DistanceStrategy.EUCLIDEAN_DISTANCE.value,
-            "index_type":"IVF_FLAT", "nlist":1024, "nprobe":20,
+            "metric_type": "EUCLIDEAN_DISTANCE",
+            "index_type": "IVF_FLAT",
+            "nlist": 1024,
+            "nprobe": 20,
         }

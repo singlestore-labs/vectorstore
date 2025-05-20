@@ -1,8 +1,10 @@
 """
 Unit tests for the _format_vector_values method in the _Index class.
 """
-import pytest
+
 from unittest.mock import MagicMock
+
+import pytest
 
 from vectorstore._index import _Index
 from vectorstore.index_model import IndexModel
@@ -79,7 +81,7 @@ def test_format_vector_values_zeros(index_instance):
 
 def test_format_vector_values_special_cases(index_instance):
     """Test formatting of vectors with special values like infinity."""
-    vector = [float('inf'), float('-inf')]
+    vector = [float("inf"), float("-inf")]
     formatted = index_instance._format_vector_values(vector)
     # The exact representation might vary by Python version
     assert "inf" in formatted.lower()
