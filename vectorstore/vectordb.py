@@ -6,6 +6,7 @@ including creation, configuration, and access to the underlying data structures.
 """
 
 # Standard library imports
+from importlib import metadata
 import json
 from abc import ABC
 from typing import Dict, Optional, Union
@@ -84,7 +85,13 @@ class VectorDB(ABC):
             If neither is provided, a new connection pool will be created.
         """
         # Store connection arguments for pool creation
-        self.connection_args = kwargs
+        self.connection_args = kwargs or {}
+        if "conn_attrs" not in self.connection_args:
+            self.connection_args["conn_attrs"] = dict()
+        self.connection_args["conn_attrs"]["_connector_name"] = "vectorstore python sdk"
+        self.connection_args["conn_attrs"]["_connector_version"] = metadata.version(
+            "singlestore-vectorstore"
+        )
 
         # Set up connection handling
         self.connection = connection

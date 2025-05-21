@@ -5,7 +5,7 @@ description = "Vector store interface for SingleStore Database"
 authors = [
     {name = "Volodymyr Tkachuk",email = "vtkachuk-ua@singlestore.com"}
 ]
-license = {text = "MIT"}
+license = "LICENSE"
 readme = "README.md"
 
 dependencies = [
