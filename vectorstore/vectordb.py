@@ -90,7 +90,7 @@ class VectorDB(ABC):
             self.connection_args["conn_attrs"] = dict()
         self.connection_args["conn_attrs"]["_connector_name"] = "vectorstore python sdk"
         self.connection_args["conn_attrs"]["_connector_version"] = metadata.version(
-            __package__
+            "singlestore-vectorstore"
         )
 
         # Set up connection handling

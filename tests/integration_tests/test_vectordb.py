@@ -1,3 +1,4 @@
+from importlib import metadata
 import pytest
 from singlestoredb import connect
 from singlestoredb.connection import Connection
@@ -49,9 +50,9 @@ class TestVectorDB:
         for result in results:
             if result[1] == "_connector_name" and result[2] == "vectorstore python sdk":
                 found_name = True
-            elif (
-                result[1] == "_connector_version" and result[2] == "0.1.0"
-            ):  # should be replaced with the actual version
+            elif result[1] == "_connector_version" and result[2] == metadata.version(
+                "singlestore-vectorstore"
+            ):
                 found_version = True
         assert found_name is True
         assert found_version is True
