@@ -54,7 +54,7 @@ build: clean
 
 # Publish to PyPI
 publish: build
-	poetry publish --username __token__ --password $(PYPI_TOKEN)
+	poetry publish
 
 # Show help
 help:

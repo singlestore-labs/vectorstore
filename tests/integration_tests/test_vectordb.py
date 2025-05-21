@@ -1,3 +1,4 @@
+from importlib import metadata
 import pytest
 from singlestoredb import connect
 from singlestoredb.connection import Connection
@@ -27,6 +28,34 @@ class TestVectorDB:
         assert result is not None
         assert result[0] == "vector_indexes"
         curr.close()
+
+    def test_connection_attributes(
+        self, docker_server_url: str, clean_connection_params: dict
+    ):
+        _: VectorDB = VectorDB(**clean_connection_params)
+        conn = connect(docker_server_url)
+        curr = conn.cursor()
+        curr.execute(
+            "SELECT CONNECTION_ID, ATTRIBUTE_NAME, ATTRIBUTE_VALUE "
+            "from INFORMATION_SCHEMA.LMV_CONNECTION_ATTRIBUTES "
+            "WHERE ATTRIBUTE_NAME in ('_connector_name', '_connector_version') "
+            "ORDER BY CONNECTION_ID"
+        )
+        results = curr.fetchall()
+        curr.close()
+        conn.close()
+        assert results is not None
+        found_name = False
+        found_version = False
+        for result in results:
+            if result[1] == "_connector_name" and result[2] == "vectorstore python sdk":
+                found_name = True
+            elif result[1] == "_connector_version" and result[2] == metadata.version(
+                "vectorstore"
+            ):
+                found_version = True
+        assert found_name is True
+        assert found_version is True
 
     def test_initialize_with_connection_pool(self, clean_connection_pool: Pool):
         conn = clean_connection_pool.connect()
