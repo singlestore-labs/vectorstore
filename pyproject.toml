@@ -1,11 +1,11 @@
 [project]
 name = "singlestore-vectorstore"
-version = "0.1.0"
+version = "0.1.1"
 description = "Vector store interface for SingleStore Database"
 authors = [
     {name = "Volodymyr Tkachuk",email = "vtkachuk-ua@singlestore.com"}
 ]
-license = "LICENSE"
+license = {text = "Apache License (2.0)"}
 readme = "README.md"
 
 dependencies = [
