@@ -878,7 +878,7 @@ Filters can be used in multiple operations:
    results = index.query(
        vector=[0.1, 0.2, 0.3, ...],
        top_k=10,
-       filter={"category": "article", "year": {"$gte": 2020}}
+       filter={"$and": [{"category": "article"}, {"year": {"$gte": 2020}}]}
    )
    ```
 
