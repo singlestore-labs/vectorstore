@@ -252,7 +252,8 @@ class VectorDB(ABC):
             with connection.cursor() as curr:
                 # Insert index metadata into indexes table
                 is_protected = deletion_protection == DeletionProtection.ENABLED
-                curr.execute(f"""
+                curr.execute(
+                    f"""
                     INSERT INTO {INDEXES_TABLE_NAME}(
                         {INDEX_NAME_FIELD},
                         {INDEX_DIMENSION_FIELD},
@@ -261,16 +262,18 @@ class VectorDB(ABC):
                         {INDEX_USE_VECTOR_INDEX_FIELD},
                         {INDEX_VECTOR_INDEX_OPTIONS_FIELD},
                         {INDEX_TAGS_FIELD}
-                    ) VALUES(
-                        '{name}',
-                        {dimension},
-                        '{metric.value}',
-                        {is_protected},
-                        {use_vector_index},
-                        '{json.dumps(vector_index_options)}',
-                        '{json.dumps(tags)}'
-                    );
-                """)
+                    ) VALUES(%s, %s, %s, %s, %s, %s, %s);
+                """,
+                    [
+                        name,
+                        dimension,
+                        metric.value,
+                        is_protected,
+                        use_vector_index,
+                        json.dumps(vector_index_options),
+                        json.dumps(tags),
+                    ],
+                )
 
                 # Prepare vector index options
                 index_options = f"INDEX_OPTIONS '{json.dumps(vector_index_options)}'"
@@ -343,7 +346,8 @@ class VectorDB(ABC):
 
                 # Remove the index metadata
                 curr.execute(
-                    f"DELETE FROM {INDEXES_TABLE_NAME} WHERE {INDEX_NAME_FIELD}='{name}';"
+                    f"DELETE FROM {INDEXES_TABLE_NAME} WHERE {INDEX_NAME_FIELD}=%s;",
+                    [name],
                 )
         finally:
             self._close_connection_if_needed(connection)
@@ -410,7 +414,8 @@ class VectorDB(ABC):
         try:
             with connection.cursor() as curr:
                 # Query the index metadata
-                curr.execute(f"""
+                curr.execute(
+                    f"""
                     SELECT
                         {INDEX_NAME_FIELD},
                         {INDEX_DIMENSION_FIELD},
@@ -420,8 +425,10 @@ class VectorDB(ABC):
                         {INDEX_VECTOR_INDEX_OPTIONS_FIELD},
                         {INDEX_TAGS_FIELD}
                     FROM {INDEXES_TABLE_NAME}
-                    WHERE {INDEX_NAME_FIELD}='{name}'
-                """)
+                    WHERE {INDEX_NAME_FIELD}= %s
+                """,
+                    [name],
+                )
                 result = curr.fetchone()
 
                 # Check if the index exists
@@ -460,7 +467,8 @@ class VectorDB(ABC):
             with conn.cursor() as curr:
                 curr.execute(
                     f"SELECT {INDEX_NAME_FIELD} FROM {INDEXES_TABLE_NAME} "
-                    f"WHERE {INDEX_NAME_FIELD}='{name}'"
+                    f"WHERE {INDEX_NAME_FIELD}= %s",
+                    [name],
                 )
                 result = curr.fetchone()
                 return result is not None
@@ -500,6 +508,7 @@ class VectorDB(ABC):
 
         # Build update parameters
         update_params = []
+        update_values = []
 
         # Handle deletion protection
         if deletion_protection is not None:
@@ -509,19 +518,22 @@ class VectorDB(ABC):
                     f"Must be one of {list(DeletionProtection)}"
                 )
             is_protected = deletion_protection == DeletionProtection.ENABLED
-            update_params.append(f"{INDEX_DELETION_PROTECT_FIELD}={is_protected}")
+            update_params.append(f"{INDEX_DELETION_PROTECT_FIELD}=%s")
+            update_values.append(is_protected)
 
         # Handle tags
         if tags is not None:
             tags_json = json.dumps(tags)
-            update_params.append(f"{INDEX_TAGS_FIELD}='{tags_json}'")
+            update_params.append(f"{INDEX_TAGS_FIELD}=%s")
+            update_values.append(tags_json)
 
         # Initialize vector index options
         vector_index_options = dict(vector_index_options or {})
 
         # Add vector index settings
         if use_vector_index is not None:
-            update_params.append(f"{INDEX_USE_VECTOR_INDEX_FIELD}={use_vector_index}")
+            update_params.append(f"{INDEX_USE_VECTOR_INDEX_FIELD}=%s")
+            update_values.append(use_vector_index)
             # Add required metric type to options
             distance_strategy = self._get_distance_strategy(index.metric)
             vector_index_options[METRIC_TYPE] = distance_strategy.value
@@ -529,7 +541,8 @@ class VectorDB(ABC):
         # Add vector index options to update parameters if provided
         if vector_index_options:
             options_json = json.dumps(vector_index_options)
-            update_params.append(f"{INDEX_VECTOR_INDEX_OPTIONS_FIELD}='{options_json}'")
+            update_params.append(f"{INDEX_VECTOR_INDEX_OPTIONS_FIELD}=%s")
+            update_values.append(options_json)
 
         # Execute updates if there are parameters to update
         if update_params:
@@ -540,9 +553,9 @@ class VectorDB(ABC):
                     update_sql = (
                         f"UPDATE {INDEXES_TABLE_NAME} "
                         f"SET {', '.join(update_params)} "
-                        f"WHERE {INDEX_NAME_FIELD}='{name}'"
+                        f"WHERE {INDEX_NAME_FIELD}=%s"
                     )
-                    curr.execute(update_sql)
+                    curr.execute(update_sql, update_values + [name])
 
                     # Handle vector index changes if requested
                     if use_vector_index is not None:
