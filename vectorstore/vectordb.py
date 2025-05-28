@@ -86,7 +86,10 @@ class VectorDB(ABC):
         """
         # Store connection arguments for pool creation
         self.connection_args = kwargs or {}
-        if "conn_attrs" not in self.connection_args:
+        if "conn_attrs" not in self.connection_args or not self.connection_args.get(
+            "conn_attrs"
+        ):
+            # Initialize connection attributes if not provided
             self.connection_args["conn_attrs"] = dict()
         self.connection_args["conn_attrs"]["_connector_name"] = "vectorstore python sdk"
         self.connection_args["conn_attrs"]["_connector_version"] = metadata.version(

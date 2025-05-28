@@ -32,25 +32,24 @@ def test_exact_match_filter():
     query, params = _parse_filter(filter_dict)
     assert (
         query
-        == f"JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, 'field')"
+        == f"JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, %s)"
     )
-    assert params == ["value"]
+    assert params == ["value", "field"]
 
     filter_dict = {"field": 123}
     query, params = _parse_filter(filter_dict)
     assert (
         query
-        == f"JSON_MATCH_ANY(MATCH_PARAM_DOUBLE_STRICT() = %s, {METADATA_FIELD}, 'field')"
+        == f"JSON_MATCH_ANY(MATCH_PARAM_DOUBLE_STRICT() = %s, {METADATA_FIELD}, %s)"
     )
-    assert params == [123]
+    assert params == [123, "field"]
 
     filter_dict = {"field": True}
     query, params = _parse_filter(filter_dict)
     assert (
-        query
-        == f"JSON_MATCH_ANY(MATCH_PARAM_BOOL_STRICT() = %s, {METADATA_FIELD}, 'field')"
+        query == f"JSON_MATCH_ANY(MATCH_PARAM_BOOL_STRICT() = %s, {METADATA_FIELD}, %s)"
     )
-    assert params == [True]
+    assert params == [True, "field"]
 
 
 def test_eq_filter():
@@ -58,9 +57,9 @@ def test_eq_filter():
     query, params = _parse_filter(filter_dict)
     assert (
         query
-        == f"JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, 'field')"
+        == f"JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, %s)"
     )
-    assert params == ["value"]
+    assert params == ["value", "field"]
 
 
 def test_ne_filter():
@@ -68,17 +67,18 @@ def test_ne_filter():
     query, params = _parse_filter(filter_dict)
     assert (
         query
-        == f"NOT JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, 'field') AND JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, 'field')"
+        == f"NOT JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, %s)"
+        f" AND JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, %s)"
     )
-    assert params == ["value"]
+    assert params == ["value", "field", "field"]
 
 
 # Tests for numeric comparison filters
 def test_gt_filter():
     filter_dict = {"field": {"$gt": 10}}
     query, params = _parse_filter(filter_dict)
-    assert query == f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, 'field') > %s"
-    assert params == [10]
+    assert query == f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, %s) > %s"
+    assert params == ["field", 10]
 
     with pytest.raises(ValueError, match=r"\$gt must be a numeric value"):
         _parse_filter({"field": {"$gt": "string"}})
@@ -87,8 +87,8 @@ def test_gt_filter():
 def test_gte_filter():
     filter_dict = {"field": {"$gte": 10}}
     query, params = _parse_filter(filter_dict)
-    assert query == f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, 'field') >= %s"
-    assert params == [10]
+    assert query == f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, %s) >= %s"
+    assert params == ["field", 10]
 
     with pytest.raises(ValueError, match=r"\$gte must be a numeric value"):
         _parse_filter({"field": {"$gte": "string"}})
@@ -97,8 +97,8 @@ def test_gte_filter():
 def test_lt_filter():
     filter_dict = {"field": {"$lt": 10}}
     query, params = _parse_filter(filter_dict)
-    assert query == f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, 'field') < %s"
-    assert params == [10]
+    assert query == f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, %s) < %s"
+    assert params == ["field", 10]
 
     with pytest.raises(ValueError, match=r"\$lt must be a numeric value"):
         _parse_filter({"field": {"$lt": "string"}})
@@ -107,8 +107,8 @@ def test_lt_filter():
 def test_lte_filter():
     filter_dict = {"field": {"$lte": 10}}
     query, params = _parse_filter(filter_dict)
-    assert query == f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, 'field') <= %s"
-    assert params == [10]
+    assert query == f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, %s) <= %s"
+    assert params == ["field", 10]
 
     with pytest.raises(ValueError, match=r"\$lte must be a numeric value"):
         _parse_filter({"field": {"$lte": "string"}})
@@ -120,9 +120,9 @@ def test_in_filter():
     query, params = _parse_filter(filter_dict)
     assert (
         query
-        == f"JSON_MATCH_ANY(JSON_ARRAY_CONTAINS_JSON(%s, MATCH_PARAM_JSON()), {METADATA_FIELD}, 'field')"
+        == f"JSON_MATCH_ANY(JSON_ARRAY_CONTAINS_JSON(%s, MATCH_PARAM_JSON()), {METADATA_FIELD}, %s)"
     )
-    assert params == [json.dumps(["value1", "value2"])]
+    assert params == [json.dumps(["value1", "value2"]), "field"]
 
     with pytest.raises(ValueError, match=r"\$in must be a list"):
         _parse_filter({"field": {"$in": "not_a_list"}})
@@ -133,9 +133,10 @@ def test_nin_filter():
     query, params = _parse_filter(filter_dict)
     assert (
         query
-        == f"NOT JSON_MATCH_ANY(JSON_ARRAY_CONTAINS_JSON(%s, MATCH_PARAM_JSON()), {METADATA_FIELD}, 'field') AND JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, 'field')"
+        == f"NOT JSON_MATCH_ANY(JSON_ARRAY_CONTAINS_JSON(%s, MATCH_PARAM_JSON()), {METADATA_FIELD}, %s)"
+        f" AND JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, %s)"
     )
-    assert params == [json.dumps(["value1", "value2"])]
+    assert params == [json.dumps(["value1", "value2"]), "field", "field"]
 
     with pytest.raises(ValueError, match=r"\$nin must be a list"):
         _parse_filter({"field": {"$nin": "not_a_list"}})
@@ -145,13 +146,13 @@ def test_nin_filter():
 def test_exists_filter():
     filter_dict = {"field": {"$exists": True}}
     query, params = _parse_filter(filter_dict)
-    assert query == f"JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, 'field')"
-    assert params == []
+    assert query == f"JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, %s)"
+    assert params == ["field"]
 
     filter_dict = {"field": {"$exists": False}}
     query, params = _parse_filter(filter_dict)
-    assert query == f"NOT JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, 'field')"
-    assert params == []
+    assert query == f"NOT JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, %s)"
+    assert params == ["field"]
 
     with pytest.raises(ValueError, match=r"\$exists must be a boolean"):
         _parse_filter({"field": {"$exists": "not_a_bool"}})
@@ -161,9 +162,12 @@ def test_exists_filter():
 def test_and_filter():
     filter_dict = {"$and": [{"field1": "value1"}, {"field2": "value2"}]}
     query, params = _parse_filter(filter_dict)
-    expected_query = f"JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, 'field1') AND JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, 'field2')"
+    expected_query = (
+        f"JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, %s)"
+        + f" AND JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, %s)"
+    )
     assert query == expected_query
-    assert params == ["value1", "value2"]
+    assert params == ["value1", "field1", "value2", "field2"]
 
     with pytest.raises(ValueError, match=r"\$and must be a list of filters"):
         _parse_filter({"$and": "not_a_list"})
@@ -172,9 +176,12 @@ def test_and_filter():
 def test_or_filter():
     filter_dict = {"$or": [{"field1": "value1"}, {"field2": "value2"}]}
     query, params = _parse_filter(filter_dict)
-    expected_query = f"(JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, 'field1') OR JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, 'field2'))"
+    expected_query = (
+        f"(JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, %s)"
+        + f" OR JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, %s))"
+    )
     assert query == expected_query
-    assert params == ["value1", "value2"]
+    assert params == ["value1", "field1", "value2", "field2"]
 
     with pytest.raises(ValueError, match=r"\$or must be a list of filters"):
         _parse_filter({"$or": "not_a_list"})
@@ -189,9 +196,13 @@ def test_nested_filters():
         ]
     }
     query, params = _parse_filter(filter_dict)
-    expected_query = f"JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, 'field1') AND (JSON_EXTRACT_DOUBLE({METADATA_FIELD}, 'field2') > %s OR JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, 'field3'))"
+    expected_query = (
+        f"JSON_MATCH_ANY(MATCH_PARAM_STRING_STRICT() = %s, {METADATA_FIELD}, %s)"
+        + f" AND (JSON_EXTRACT_DOUBLE({METADATA_FIELD}, %s) > %s"
+        + f" OR JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, %s))"
+    )
     assert query == expected_query
-    assert params == ["value1", 10]
+    assert params == ["value1", "field1", "field2", 10, "field3"]
 
 
 # Tests for error cases

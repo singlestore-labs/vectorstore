@@ -1,5 +1,7 @@
 """Constants for vectorstore module"""
 
+import re
+
 INDEXES_TABLE_NAME = "vector_indexes"
 INDEX_NAME_FIELD = "name"
 INDEX_DIMENSION_FIELD = "dimension"
@@ -13,7 +15,9 @@ INDEX_TAGS_FIELD = "tags"
 
 def _get_index_table_name(index: str) -> str:
     """Get the index table name."""
-    return f"index_{index}"
+    # Replace any character that is not A-Z, a-z, 0-9, or _ with underscore
+    sanitized_index = re.sub(r"[^A-Za-z0-9_]", "_", index)
+    return f"index_{sanitized_index}"
 
 
 ID_FIELD = "id"

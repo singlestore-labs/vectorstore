@@ -122,8 +122,8 @@ def _parse_filter(filter_dict: FilterTypedDict) -> Tuple[str, List[Any]]:
             # Handle exact match filter
             match_func = _get_match_param_function(field_value)
             return (
-                f"JSON_MATCH_ANY({match_func} = %s, {METADATA_FIELD}, '{field_name}')",
-                [field_value],
+                f"JSON_MATCH_ANY({match_func} = %s, {METADATA_FIELD}, %s)",
+                [field_value, field_name],
             )
 
 
@@ -177,17 +177,17 @@ def _handle_operator_filter(
     if operator == "$eq":
         match_func = _get_match_param_function(field_value)
         return (
-            f"JSON_MATCH_ANY({match_func} = %s, {METADATA_FIELD}, '{field_name}')",
-            [field_value],
+            f"JSON_MATCH_ANY({match_func} = %s, {METADATA_FIELD}, %s)",
+            [field_value, field_name],
         )
 
     # Not equal operator
     elif operator == "$ne":
         match_func = _get_match_param_function(field_value)
         return (
-            f"NOT JSON_MATCH_ANY({match_func} = %s, {METADATA_FIELD}, '{field_name}') AND "
-            f"JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, '{field_name}')",
-            [field_value],
+            f"NOT JSON_MATCH_ANY({match_func} = %s, {METADATA_FIELD}, %s) AND "
+            f"JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, %s)",
+            [field_value, field_name, field_name],
         )
 
     # Numeric comparison operators
@@ -198,8 +198,8 @@ def _handle_operator_filter(
         comparison_op = {"$gt": ">", "$gte": ">=", "$lt": "<", "$lte": "<="}[operator]
 
         return (
-            f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, '{field_name}') {comparison_op} %s",
-            [field_value],
+            f"JSON_EXTRACT_DOUBLE({METADATA_FIELD}, %s) {comparison_op} %s",
+            [field_name, field_value],
         )
 
     # Collection operators
@@ -210,15 +210,15 @@ def _handle_operator_filter(
         if operator == "$in":
             return (
                 f"JSON_MATCH_ANY(JSON_ARRAY_CONTAINS_JSON(%s, MATCH_PARAM_JSON()), "
-                f"{METADATA_FIELD}, '{field_name}')",
-                [json.dumps(field_value)],
+                f"{METADATA_FIELD}, %s)",
+                [json.dumps(field_value), field_name],
             )
         else:  # $nin
             return (
                 f"NOT JSON_MATCH_ANY(JSON_ARRAY_CONTAINS_JSON(%s, MATCH_PARAM_JSON()), "
-                f"{METADATA_FIELD}, '{field_name}') AND "
-                f"JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, '{field_name}')",
-                [json.dumps(field_value)],
+                f"{METADATA_FIELD}, %s) AND "
+                f"JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, %s)",
+                [json.dumps(field_value), field_name, field_name],
             )
 
     # Existence operator
@@ -227,9 +227,9 @@ def _handle_operator_filter(
             raise ValueError("$exists must be a boolean")
 
         if field_value:
-            return f"JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, '{field_name}')", []
+            return f"JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, %s)", [field_name]
         else:
-            return f"NOT JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, '{field_name}')", []
+            return f"NOT JSON_MATCH_ANY_EXISTS({METADATA_FIELD}, %s)", [field_name]
 
     else:
         raise ValueError(f"Unsupported operator: {operator}")
