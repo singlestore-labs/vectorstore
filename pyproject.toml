@@ -1,6 +1,6 @@
 [project]
 name = "singlestore-vectorstore"
-version = "0.1.1"
+version = "0.1.2"
 description = "Vector store interface for SingleStore Database"
 authors = [
     {name = "Volodymyr Tkachuk",email = "vtkachuk-ua@singlestore.com"}
