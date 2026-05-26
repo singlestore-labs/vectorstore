@@ -37,6 +37,12 @@ jobs:
           poetry config virtualenvs.in-project true
           poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
 
+      - name: Set version from tag
+        run: |
+          TAG_VERSION=${GITHUB_REF_NAME#v}
+          echo "Setting version to $TAG_VERSION in pyproject.toml"
+          sed -i "s/^version = \".*\"/version = \"$TAG_VERSION\"/" pyproject.toml
+
       - name: Build package
         run: make build
 
