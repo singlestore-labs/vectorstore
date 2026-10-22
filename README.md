@@ -907,3 +907,6 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 Future development plans include:
 
 - Adding index-for-model support with hybrid search capabilities (combining text and vector embedding searches)
+
+## Disclaimer
+Attention: The code in this repository is intended for experimental use only and is not fully tested, documented, or supported by SingleStore. Visit the SingleStore Forums to ask questions about this repository.
